@@ -772,11 +772,11 @@ const ServiceList = ({ serviceTypeId, name, currencyId, currencyDestinationId, s
             >
               Agregar fila
             </Button>
-            {dailyRows.length > 0 && (
+            {dailyRows.length > 0 &&
               <Typography variant="caption" color="text.secondary">
-                Se guardarán solo filas con días > 0 y comisión >= 0.
+                Se guardarán solo filas con días {'>'} 0 y comisión {'>='} 0.
               </Typography>
-            )}
+            }
           </Stack>
         </DialogContent>
         <DialogActions>
