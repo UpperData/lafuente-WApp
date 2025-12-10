@@ -774,7 +774,7 @@ const ServiceList = ({ serviceTypeId, name, currencyId, currencyDestinationId, s
             </Button>
             {dailyRows.length > 0 &&
               <Typography variant="caption" color="text.secondary">
-                Se guardarán solo filas con días {'>'} 0 y comisión {'>='} 0.
+                Se guardarán solo filas con días  y comisión  mayores a cero(0).
               </Typography>
             }
           </Stack>
