@@ -257,12 +257,12 @@ const ClientCompact = ({
         <DialogContent dividers>
           {value ? (
             <Grid container spacing={2}>
-              <Grid item xs={12} sm={6}><Typography variant="caption">Doc ID</Typography><Typography>{value.docId ?? '-'}</Typography></Grid>
+              <Grid item xs={12} sm={6}><Typography variant="caption">Cédula</Typography><Typography>{value.docId ?? '-'}</Typography></Grid>
               <Grid item xs={12} sm={6}><Typography variant="caption">Nombre</Typography><Typography>{value.firstName ?? '-'}</Typography></Grid>
               <Grid item xs={12} sm={6}><Typography variant="caption">Apellido</Typography><Typography>{value.lastName ?? '-'}</Typography></Grid>
               <Grid item xs={12} sm={6}><Typography variant="caption">Correo</Typography><Typography>{value.email ?? '-'}</Typography></Grid>
               <Grid item xs={12} sm={6}><Typography variant="caption">Teléfono</Typography><Typography>{value.phone ?? '-'}</Typography></Grid>
-              <Grid item xs={12} sm={6}><Typography variant="caption">Género</Typography><Typography>{value.isFemale ? 'Femenino' : 'Masculino'}</Typography></Grid>
+              <Grid item xs={12} sm={6}><Typography variant="caption">Género</Typography><Typography>{value.isFemale ? 'Mujer' : 'Hombre'}</Typography> {/* actualizar visualización */}</Grid>
               <Grid item xs={12} sm={6}><Typography variant="caption">Nacional</Typography><Typography>{value.isNational ? 'Sí' : 'No'}</Typography></Grid>
               <Grid item xs={12} sm={6}><Typography variant="caption">Nacimiento</Typography><Typography>{value.birthDate ? new Date(value.birthDate).toLocaleDateString() : '-'}</Typography></Grid>
               <Grid item xs={12} sm={6}><Typography variant="caption">Activo</Typography><Typography>{value.isActived ? 'Sí' : 'No'}</Typography></Grid>
@@ -281,7 +281,7 @@ const ClientCompact = ({
           {saving && <LinearProgress sx={{ mb: 2 }} />}
           <Grid container spacing={2}>
             <Grid item xs={12} sm={6}>
-              <TextField label="Doc ID" name="docId" value={form.docId} onChange={handleFormChange} fullWidth size="small" />
+              <TextField label="Cédula" name="docId" value={form.docId} onChange={handleFormChange} fullWidth size="small" />
             </Grid>
             <Grid item xs={12} sm={6}>
               <TextField label="Correo" name="email" value={form.email} onChange={handleFormChange} fullWidth size="small" />
@@ -308,7 +308,10 @@ const ClientCompact = ({
               />
             </Grid>
             <Grid item xs={12} sm={6}>
-              <FormControlLabel control={<Switch checked={form.isFemale} onChange={handleToggle('isFemale')} />} label="Femenino" />
+              <FormControlLabel
+                control={<Switch checked={form.isFemale} onChange={handleToggle('isFemale')} />}
+                label={form.isFemale ? 'Mujer' : 'Hombre'} // dinámico según isFemale
+              />
             </Grid>
             <Grid item xs={12} sm={6}>
               <FormControlLabel control={<Switch checked={form.isNational} onChange={handleToggle('isNational')} />} label="Nacional" />

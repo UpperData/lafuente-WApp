@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Home from '../pages/Home';
 import Dashboard from '../pages/Dashboard';
 import AccountManagement from '../pages/AccountManagement';
@@ -9,45 +9,112 @@ import Layout from '../components/Layout';
 import BoxManagement from '../pages/BoxManagement';
 import InputTransactionManagement from '../pages/InputTransactionManagement';
 import OutputTransactionManagement from '../pages/OutputTransactionManagement';
+
+// Utilidades locales para validar token (sin verificar firma)
+const decodeJwt = (token) => {
+  try {
+    const [, payload] = token.split('.');
+    return JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+  } catch {
+    return null;
+  }
+};
+const isTokenValid = () => {
+  const token = localStorage.getItem('token');
+  if (!token) return false;
+  const payload = decodeJwt(token);
+  const exp = payload?.exp;
+  const nowSec = Math.floor(Date.now() / 1000);
+  return !!exp && exp > nowSec;
+};
+
+// Wrapper de ruta protegida
+const RequireAuth = ({ children }) => {
+  const location = useLocation();
+  if (!isTokenValid()) {
+    // limpiar y redirigir a login
+    localStorage.removeItem('token');
+    return <Navigate to="/login" replace state={{ from: location }} />;
+  }
+  return children;
+};
+
 const AppRoutes = () => (
   <Router>
     <Routes>
       <Route path="/" element={<Home />} />
-      <Route path="/dashboard" element={
-        <Layout>
-            <Dashboard />
-        </Layout>
-        } />
-      <Route path="/acc/management" element={
-        <Layout>
-          <AccountManagement />
-        </Layout>
-      } />
-      <Route path="/services/management" element={
-        <Layout>
-          <ServiceManagement />
-        </Layout>
-      } />
-      <Route path="/boxes/management" element={
-        <Layout>
-          <BoxManagement />
-        </Layout>
-      } />
-      <Route path="/input/transaction" element={
-        <Layout>
-          <InputTransactionManagement />
-        </Layout>
-      } />
-      <Route path="/output/transaction" element={
-        <Layout>
-          <OutputTransactionManagement />
-        </Layout>
-      } />
-      <Route path="*" element={
-        <Layout>
-          <NotFound />
-        </Layout>
-      } />
+      <Route path="/login" element={<Home />} />
+
+      <Route
+        path="/dashboard"
+        element={
+          <RequireAuth>
+            <Layout>
+              <Dashboard />
+            </Layout>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/acc/management"
+        element={
+          <RequireAuth>
+            <Layout>
+              <AccountManagement />
+            </Layout>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/services/management"
+        element={
+          <RequireAuth>
+            <Layout>
+              <ServiceManagement />
+            </Layout>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/boxes/management"
+        element={
+          <RequireAuth>
+            <Layout>
+              <BoxManagement />
+            </Layout>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/input/transaction"
+        element={
+          <RequireAuth>
+            <Layout>
+              <InputTransactionManagement />
+            </Layout>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/output/transaction"
+        element={
+          <RequireAuth>
+            <Layout>
+              <OutputTransactionManagement />
+            </Layout>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="*"
+        element={
+          <RequireAuth>
+            <Layout>
+              <NotFound />
+            </Layout>
+          </RequireAuth>
+        }
+      />
     </Routes>
   </Router>
 );

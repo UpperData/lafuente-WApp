@@ -31,14 +31,38 @@ const GroupTransaction = ({ clientId, onSelect, size = 12, spacing = 1, showLabe
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
+  // NUEVO: catálogo de tipos de servicio destino
+  const [serviceTypes, setServiceTypes] = useState([]);
+  const [serviceTypesLoading, setServiceTypesLoading] = useState(false); // NUEVO
+  // NUEVO: catálogo de monedas destino
+  const [currencies, setCurrencies] = useState([]);
+  const [currenciesLoading, setCurrenciesLoading] = useState(false); // NUEVO
+
   // NUEVO: estado para crear grupo
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({
-    name: '',
-    color: '#cccccc',
     note: '',
-    payDestination: { holder: '', receiber: '', identificator: '' },
+    payDestination: { holder: '', identificator: '' }, // eliminado: receiber
+    serviceTypeDestinationId: '',
+    currencyDestinationId: '',
+  });
+
+  // NUEVO: catálogos y campos para Digital (id=1)
+  const [countries, setCountries] = useState([]);
+  const [banks, setBanks] = useState([]);
+  const [countryId, setCountryId] = useState('');
+  const [bankId, setBankId] = useState('');
+  const [accountNumber, setAccountNumber] = useState('');
+
+  // NUEVO: edición de grupo vía click derecho
+  const [editOpen, setEditOpen] = useState(false);
+  const [editGroup, setEditGroup] = useState(null);
+  const [updating, setUpdating] = useState(false);
+  const [editForm, setEditForm] = useState({
+    note: '',
+    isActived: true,
+    payDestination: { holder: '', identificator: '' },
     serviceTypeDestinationId: '',
     currencyDestinationId: '',
   });
@@ -100,31 +124,115 @@ const GroupTransaction = ({ clientId, onSelect, size = 12, spacing = 1, showLabe
     }
   };
 
-  const handleCreateGroup = async () => {
-    if (!clientId) return;
-    // validaciones mínimas
-    const name = String(form.name || '').trim();
-    const color = safeHex(form.color) || '#cccccc';
-    if (!name) {
-      setErrorMsg('El nombre es obligatorio');
+  // NUEVO: cargar catálogos cuando abre crear o editar
+  useEffect(() => {
+    const shouldLoad = createOpen || editOpen;
+    if (!shouldLoad) return;
+
+    const token = localStorage.getItem('token');
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+    const loadServiceTypes = async () => {
+      setServiceTypesLoading(true);
+      try {
+        const stRes = await axios.get('/masters/service-types', { params: { isActived: true }, headers });
+        const st = stRes.data?.rs ?? stRes.data ?? [];
+        setServiceTypes(Array.isArray(st) ? st : []);
+      } catch {
+        setServiceTypes([]);
+      } finally {
+        setServiceTypesLoading(false);
+      }
+    };
+
+    const loadCurrencies = async () => {
+      setCurrenciesLoading(true);
+      try {
+        const curRes = await axios.get('/masters/currencies', { params: { isActived: true }, headers });
+        const cur = curRes.data?.rs ?? curRes.data ?? [];
+        setCurrencies(Array.isArray(cur) ? cur : []);
+      } catch {
+        setCurrencies([]);
+      } finally {
+        setCurrenciesLoading(false);
+      }
+    };
+
+    loadServiceTypes();
+    loadCurrencies();
+  }, [createOpen, editOpen]);
+
+  // NUEVO: si tipo servicio = Digital (id=1), cargar países
+  useEffect(() => {
+    const isDigital = Number(form.serviceTypeDestinationId) === 1;
+    if (!createOpen || !isDigital) return;
+    const loadCountries = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const res = await axios.get('/masters/countries', { headers });
+        const data = res.data?.rs ?? res.data ?? [];
+        setCountries(Array.isArray(data) ? data : []);
+      } catch {
+        setCountries([]);
+      }
+    };
+    loadCountries();
+  }, [createOpen, form.serviceTypeDestinationId]);
+
+  // NUEVO: cargar bancos al seleccionar país (solo si Digital)
+  useEffect(() => {
+    const isDigital = Number(form.serviceTypeDestinationId) === 1;
+    if (!createOpen || !isDigital) return;
+    const cid = Number(countryId);
+    if (!Number.isFinite(cid) || cid <= 0) {
+      setBanks([]);
       return;
     }
+    const loadBanks = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const res = await axios.get('/masters/banks', { params: { countryId: cid }, headers });
+        const data = res.data?.rs ?? res.data ?? [];
+        setBanks(Array.isArray(data) ? data : []);
+      } catch {
+        setBanks([]);
+      }
+    };
+    loadBanks();
+  }, [createOpen, form.serviceTypeDestinationId, countryId]);
+
+  const handleCreateGroup = async () => {
+    if (!clientId) return;
     if (!form.serviceTypeDestinationId || !form.currencyDestinationId) {
       setErrorMsg('Moneda y tipo de servicio son obligatorios');
       return;
     }
+    // Validaciones extra si Digital
+    const isDigital = Number(form.serviceTypeDestinationId) === 1;
+    if (isDigital) {
+      if (!countryId) return setErrorMsg('Seleccione país');
+      if (!bankId) return setErrorMsg('Seleccione banco');
+      if (!accountNumber) return setErrorMsg('Ingrese número de cuenta');
+    }
+
     setCreating(true);
     setErrorMsg('');
     try {
       const token = localStorage.getItem('token');
       const payload = {
-        name,
         clientId,
-        color,
         payDestination: {
           holder: form.payDestination.holder || '',
-          receiber: form.payDestination.receiber || '',
           identificator: form.payDestination.identificator || '',
+          ...(isDigital
+            ? {
+                countryId: Number(countryId),
+                bankId: Number(bankId),
+                accountNumber: String(accountNumber || ''),
+              }
+            : {}),
         },
         note: form.note || '',
         serviceTypeDestinationId: Number(form.serviceTypeDestinationId),
@@ -135,13 +243,14 @@ const GroupTransaction = ({ clientId, onSelect, size = 12, spacing = 1, showLabe
       });
       setCreateOpen(false);
       setForm({
-        name: '',
-        color: '#cccccc',
         note: '',
-        payDestination: { holder: '', receiber: '', identificator: '' },
+        payDestination: { holder: '', identificator: '' },
         serviceTypeDestinationId: '',
         currencyDestinationId: '',
       });
+      setCountryId('');
+      setBankId('');
+      setAccountNumber('');
       await fetchGroups();
     } catch (e) {
       setErrorMsg(e?.response?.data?.message || e?.message || 'Error al crear grupo');
@@ -183,6 +292,77 @@ const GroupTransaction = ({ clientId, onSelect, size = 12, spacing = 1, showLabe
     return copy;
   }, [groups]);
 
+  const populateEditForm = (g) => {
+    setEditForm({
+      note: g?.note ?? '',
+      isActived: g?.isActived ?? true,
+      payDestination: {
+        holder:
+          g?.['payDestination.holder'] ??
+          g?.payDestination?.holder ??
+          g?.holder ??
+          '',
+        identificator:
+          g?.['payDestination.identificator'] ??
+          g?.payDestination?.identificator ??
+          g?.identificator ??
+          '',
+      },
+      serviceTypeDestinationId:
+        g?.['ServiceType.id'] ?? g?.ServiceType?.id ?? g?.serviceTypeDestinationId ?? '',
+      currencyDestinationId:
+        g?.['Currency.id'] ?? g?.Currency?.id ?? g?.currencyDestinationId ?? '',
+    });
+  };
+
+  const onCircleContextMenu = (e, g) => {
+    e.preventDefault();
+    setEditGroup(g);
+    populateEditForm(g);
+    setEditOpen(true);
+  };
+
+  const updateEditForm = (path, value) => {
+    setEditForm((prev) => {
+      const next = { ...prev };
+      if (path.startsWith('payDestination.')) {
+        const k = path.split('.')[1];
+        next.payDestination = { ...prev.payDestination, [k]: value };
+      } else {
+        next[path] = value;
+      }
+      return next;
+    });
+  };
+
+  const handleUpdateGroup = async () => {
+    if (!editGroup?.id) return;
+    setUpdating(true);
+    try {
+      const token = localStorage.getItem('token');
+      const payload = {
+        payDestination: {
+          holder: editForm.payDestination.holder || '',
+          identificator: editForm.payDestination.identificator || '',
+        },
+        note: editForm.note || '',
+        isActived: Boolean(editForm.isActived),
+        serviceTypeDestinationId: Number(editForm.serviceTypeDestinationId),
+        currencyDestinationId: Number(editForm.currencyDestinationId),
+      };
+      await axios.put(`/transactions/group/update/${editGroup.id}`, payload, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setEditOpen(false);
+      setEditGroup(null);
+      await fetchGroups();
+    } catch (e) {
+      setErrorMsg(e?.response?.data?.message || e?.message || 'Error al actualizar grupo');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
   if (!clientId) {
     return (
       <Typography variant="caption" color="text.secondary">
@@ -223,7 +403,6 @@ const GroupTransaction = ({ clientId, onSelect, size = 12, spacing = 1, showLabe
 
           const handleClick = () => {
             setActiveGroupId((prev) => (prev === g?.id ? null : g?.id));
-            // Notify parent with the selected group's id (required for transactionGroupId)
             if (onSelect) onSelect(isActive ? null : g?.id);
           };
 
@@ -246,6 +425,7 @@ const GroupTransaction = ({ clientId, onSelect, size = 12, spacing = 1, showLabe
                     outlineOffset: isActive ? 2 : 0,
                   }}
                   onClick={handleClick}
+                  onContextMenu={(e) => onCircleContextMenu(e, g)} // NUEVO: click derecho para editar
                 />
                 {showLabels && (
                   <Typography variant="body2" color="text.secondary" sx={{ ml: 0.75 }}>
@@ -268,31 +448,7 @@ const GroupTransaction = ({ clientId, onSelect, size = 12, spacing = 1, showLabe
         <DialogTitle>Nuevo grupo</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2}>
-            <TextField
-              label="Nombre"
-              value={form.name}
-              onChange={(e) => updateForm('name', e.target.value)}
-              size="small"
-              fullWidth
-              required
-            />
-            <TextField
-              label="Color (hex)"
-              value={form.color}
-              onChange={(e) => updateForm('color', e.target.value)}
-              size="small"
-              fullWidth
-              helperText="Ej: #ffcc00"
-            />
-            <TextField
-              label="Nota"
-              value={form.note}
-              onChange={(e) => updateForm('note', e.target.value)}
-              size="small"
-              fullWidth
-              multiline
-              minRows={2}
-            />
+            {/* Destino del pago */}
             <Typography variant="subtitle2">Destino del pago</Typography>
             <Stack direction="row" spacing={2}>
               <TextField
@@ -303,51 +459,245 @@ const GroupTransaction = ({ clientId, onSelect, size = 12, spacing = 1, showLabe
                 fullWidth
               />
               <TextField
-                label="Receptor"
-                value={form.payDestination.receiber}
-                onChange={(e) => updateForm('payDestination.receiber', e.target.value)}
+                label="Cédula identidad"
+                value={form.payDestination.identificator}
+                onChange={(e) => updateForm('payDestination.identificator', e.target.value)}
                 size="small"
                 fullWidth
               />
             </Stack>
-            <TextField
-              label="Identificador"
-              value={form.payDestination.identificator}
-              onChange={(e) => updateForm('payDestination.identificator', e.target.value)}
-              size="small"
-              fullWidth
-            />
 
             <Stack direction="row" spacing={2}>
               <TextField
-                label="Tipo de servicio destino (ID)"
+                select
+                label="Tipo de servicio destino"
                 value={form.serviceTypeDestinationId}
                 onChange={(e) => updateForm('serviceTypeDestinationId', e.target.value)}
                 size="small"
                 fullWidth
-                type="number"
                 required
-              />
+                helperText={
+                  serviceTypesLoading
+                    ? 'Cargando tipos...'
+                    : serviceTypes.length === 0 ? 'Sin tipos disponibles' : ' '
+                }
+              >
+                <MenuItem value="">Seleccione</MenuItem>
+                {serviceTypes.map((st) => (
+                  <MenuItem key={st.id} value={st.id}>
+                    {st.name}
+                  </MenuItem>
+                ))}
+              </TextField>
+
               <TextField
-                label="Moneda destino (ID)"
+                select
+                label="Moneda destino"
                 value={form.currencyDestinationId}
                 onChange={(e) => updateForm('currencyDestinationId', e.target.value)}
                 size="small"
                 fullWidth
-                type="number"
                 required
-              />
+                helperText={
+                  currenciesLoading
+                    ? 'Cargando monedas...'
+                    : currencies.length === 0 ? 'Sin monedas disponibles' : ' '
+                }
+              >
+                <MenuItem value="">Seleccione</MenuItem>
+                {currencies.map((c) => (
+                  <MenuItem key={c.id} value={c.id}>
+                    {c.name}{c.symbol ? ` (${c.symbol})` : ''}
+                  </MenuItem>
+                ))}
+              </TextField>
             </Stack>
+
+            {/* NUEVO: Condicional si Tipo Servicio = Digital (id=1) */}
+            {Number(form.serviceTypeDestinationId) === 1 && (
+              <>
+                <Stack direction="row" spacing={2}>
+                  <TextField
+                    select
+                    label="País"
+                    value={countryId}
+                    onChange={(e) => setCountryId(e.target.value)}
+                    size="small"
+                    fullWidth
+                    required
+                    helperText={countries.length === 0 ? 'Sin países disponibles' : ' '}
+                  >
+                    <MenuItem value="">Seleccione</MenuItem>
+                    {countries.map((ct) => (
+                      <MenuItem key={ct.id} value={ct.id}>
+                        {ct.name}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+
+                  <TextField
+                    select
+                    label="Banco"
+                    value={bankId}
+                    onChange={(e) => setBankId(e.target.value)}
+                    size="small"
+                    fullWidth
+                    required
+                    helperText={banks.length === 0 ? 'Sin bancos disponibles' : ' '}
+                  >
+                    <MenuItem value="">Seleccione</MenuItem>
+                    {banks.map((b) => (
+                      <MenuItem key={b.id} value={b.id}>
+                        {b.name}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                </Stack>
+
+                <TextField
+                  label="Número de cuenta"
+                  value={accountNumber}
+                  onChange={(e) => setAccountNumber(e.target.value)}
+                  size="small"
+                  fullWidth
+                  required
+                />
+              </>
+            )}
+
+            <TextField
+              label="Nota"
+              value={form.note}
+              onChange={(e) => updateForm('note', e.target.value)}
+              size="small"
+              fullWidth
+              multiline
+              minRows={2}
+            />
           </Stack>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setCreateOpen(false)} disabled={creating}>Cancelar</Button>
-          <Button
-            onClick={handleCreateGroup}
-            variant="contained"
-            disabled={creating}
-          >
+          <Button onClick={handleCreateGroup} variant="contained" disabled={creating}>
             {creating ? 'Creando…' : 'Crear'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialogo editar grupo (click derecho) */}
+      <Dialog open={editOpen} onClose={() => setEditOpen(false)} fullWidth maxWidth="sm">
+        
+        <DialogTitle>
+            
+          <Box display="flex" alignItems="center" gap={1}>
+            {/* Círculo con el color del grupo */}
+            <Box
+              sx={{
+                width: 16,
+                height: 16,
+                borderRadius: '50%',
+                bgcolor: safeHex(editGroup?.color) || '#ccc',
+                border: '1px solid',
+                borderColor: safeHex(editGroup?.color) ? 'transparent' : 'divider',
+              }}
+            />
+            {/* Nombre del grupo en MAYÚSCULAS (fallback al id si no hay nombre) */}
+            {String(editGroup?.name || `#${editGroup?.id ?? ''}`).toUpperCase()}
+          </Box>
+        </DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2}>
+            <Typography variant="subtitle2">Destino del pago</Typography>
+            <Stack direction="row" spacing={2}>
+              <TextField
+                label="Titular"
+                value={editForm.payDestination.holder}
+                onChange={(e) => updateEditForm('payDestination.holder', e.target.value)}
+                size="small"
+                fullWidth
+              />
+              <TextField
+                label="Cédula identidad"
+                value={editForm.payDestination.identificator}
+                onChange={(e) => updateEditForm('payDestination.identificator', e.target.value)}
+                size="small"
+                fullWidth
+              />
+            </Stack>
+
+            <Stack direction="row" spacing={2}>
+              <TextField
+                select
+                label="Tipo de servicio destino"
+                value={editForm.serviceTypeDestinationId}
+                onChange={(e) => updateEditForm('serviceTypeDestinationId', e.target.value)}
+                size="small"
+                fullWidth
+                required
+                helperText={
+                  serviceTypesLoading
+                    ? 'Cargando tipos...'
+                    : serviceTypes.length === 0 ? 'Sin tipos disponibles' : ' '
+                }
+              >
+                <MenuItem value="">Seleccione</MenuItem>
+                {serviceTypes.map((st) => (
+                  <MenuItem key={st.id} value={st.id}>
+                    {st.name}
+                  </MenuItem>
+                ))}
+              </TextField>
+
+              <TextField
+                select
+                label="Moneda destino"
+                value={editForm.currencyDestinationId}
+                onChange={(e) => updateEditForm('currencyDestinationId', e.target.value)}
+                size="small"
+                fullWidth
+                required
+                helperText={
+                  currenciesLoading
+                    ? 'Cargando monedas...'
+                    : currencies.length === 0 ? 'Sin monedas disponibles' : ' '
+                }
+              >
+                <MenuItem value="">Seleccione</MenuItem>
+                {currencies.map((c) => (
+                  <MenuItem key={c.id} value={c.id}>
+                    {c.name}{c.symbol ? ` (${c.symbol})` : ''}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </Stack>
+
+            <TextField
+              label="Nota"
+              value={editForm.note}
+              onChange={(e) => updateEditForm('note', e.target.value)}
+              size="small"
+              fullWidth
+              multiline
+              minRows={2}
+            />
+
+            <TextField
+              select
+              label="Estado"
+              value={editForm.isActived ? 1 : 0}
+              onChange={(e) => updateEditForm('isActived', Number(e.target.value) === 1)}
+              size="small"
+              fullWidth
+            >
+              <MenuItem value={1}>Activo</MenuItem>
+              <MenuItem value={0}>Inactivo</MenuItem>
+            </TextField>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditOpen(false)} disabled={updating}>Cancelar</Button>
+          <Button onClick={handleUpdateGroup} variant="contained" disabled={updating}>
+            {updating ? 'Guardando…' : 'Guardar'}
           </Button>
         </DialogActions>
       </Dialog>

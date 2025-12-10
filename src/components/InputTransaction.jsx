@@ -202,9 +202,9 @@ const InputTransaction = ({ clientId, clientName, createdAtFrom, createdAtTo, on
     const firstName = user?.person?.firstName ?? user?.firstName ?? null;
     const id = user?.id ?? user?.userId ?? null;
 
-    if (firstName && (id !== null && id !== undefined)) return `${firstName} (${id})`;
+    if (firstName && (id !== null && id !== undefined)) return `${firstName} [${id}]`;
     if (firstName) return firstName;
-    if (id !== null && id !== undefined) return `(${id})`;
+    if (id !== null && id !== undefined) return `[${id}]`;
     return null;
   };
 
