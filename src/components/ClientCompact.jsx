@@ -138,8 +138,8 @@ const ClientCompact = ({
   };
 
   const handleSave = async () => {
-    // Basic validations
-    if (!form.docId || !form.firstName || !form.lastName) return;
+    // Solo Cédula obligatoria
+    if (!form.docId) return;
     setSaving(true);
     try {
       if (editMode) {
@@ -245,7 +245,7 @@ const ClientCompact = ({
           <Button variant="outlined" startIcon={<VisibilityIcon />} disabled={!value} onClick={handleOpenView}>
             Ver
           </Button>
-          <Button variant="outlined" startIcon={<EditIcon />} disabled={!value || editDisabled}>
+          <Button variant="outlined" startIcon={<EditIcon />} disabled={!value || editDisabled} onClick={handleOpenEdit}>
             Editar
           </Button>
         </Stack>
@@ -281,7 +281,15 @@ const ClientCompact = ({
           {saving && <LinearProgress sx={{ mb: 2 }} />}
           <Grid container spacing={2}>
             <Grid item xs={12} sm={6}>
-              <TextField label="Cédula" name="docId" value={form.docId} onChange={handleFormChange} fullWidth size="small" />
+              <TextField
+                label="Cédula"
+                name="docId"
+                value={form.docId}
+                onChange={handleFormChange}
+                fullWidth
+                size="small"
+                required
+              />
             </Grid>
             <Grid item xs={12} sm={6}>
               <TextField label="Correo" name="email" value={form.email} onChange={handleFormChange} fullWidth size="small" />
@@ -310,7 +318,7 @@ const ClientCompact = ({
             <Grid item xs={12} sm={6}>
               <FormControlLabel
                 control={<Switch checked={form.isFemale} onChange={handleToggle('isFemale')} />}
-                label={form.isFemale ? 'Mujer' : 'Hombre'} // dinámico según isFemale
+                label={form.isFemale ? 'Mujer' : 'Hombre'}
               />
             </Grid>
             <Grid item xs={12} sm={6}>

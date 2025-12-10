@@ -455,15 +455,20 @@ const InputTransaction = ({ clientId, clientName, createdAtFrom, createdAtTo, on
             onSelect={(groupId) => setActiveGroupId(groupId)}
           />
 
-          <Button
-            variant="contained"
-            color="primary"
-            size="small"
-            startIcon={<AddIcon />}
-            onClick={() => setOpenCreate(true)}
-          >
-            Nueva transacción
-          </Button>
+          <Tooltip title={clientId ? 'Crear transacción' : 'Seleccione un cliente'} arrow>
+            <span>
+              <Button
+                variant="contained"
+                color="primary"
+                size="small"
+                startIcon={<AddIcon />}
+                onClick={() => setOpenCreate(true)}
+                disabled={!clientId}
+              >
+                Nueva transacción
+              </Button>
+            </span>
+          </Tooltip>
 
           <Tooltip title="Actualizar" arrow>
             <IconButton size="small" onClick={fetchList}>
