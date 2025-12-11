@@ -13,7 +13,13 @@ export default defineConfig(({ mode }) => {
       'esw.truo.co',   // Servidor de desarrollo upperdata
       'localhost',     // Servidor local
     ],
-    port, strictPort: true, open: shouldOpen },
-    preview: { port, strictPort: true, open: shouldOpen },
+    port, 
+    strictPort: true, 
+    open: shouldOpen },
+    preview: { 
+      port, 
+      strictPort: true, 
+      open: shouldOpen 
+    },
   };
 });
