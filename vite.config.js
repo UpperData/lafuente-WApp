@@ -8,18 +8,22 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
-    server: { 
-      allowedHosts: [
-      'esw.truo.co',   // Servidor de desarrollo upperdata
-      'localhost',     // Servidor local
-    ],
-    port, 
-    strictPort: true, 
-    open: shouldOpen },
-    preview: { 
-      port, 
-      strictPort: true, 
-      open: shouldOpen 
+    server: {
+      allowedHosts: ['esw.truo.co','localhost'],
+      port, strictPort: true, open: shouldOpen,
+      proxy: {
+        '/masters': {
+          target: 'http://135.148.60.85:1750',
+          changeOrigin: true,
+          secure: false,
+        },
+        '/transactions': {
+          target: 'http://135.148.60.85:1750',
+          changeOrigin: true,
+          secure: false,
+        },
+      },
     },
+    preview: { port, strictPort: true, open: shouldOpen },
   };
 });
