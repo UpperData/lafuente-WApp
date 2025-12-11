@@ -22,6 +22,36 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           secure: false,
         },
+        '/datatoken': {
+          target: 'http://135.148.60.85:1750',
+          changeOrigin: true,
+          secure: false,
+        },
+        '/bank-accounts': {
+          target: 'http://135.148.60.85:1750',
+          changeOrigin: true,
+          secure: false,
+        },
+        '/accounts': {
+          target: 'http://135.148.60.85:1750',
+          changeOrigin: true,
+          secure: false,
+        },
+        '/services': {
+          target: 'http://135.148.60.85:1750',
+          changeOrigin: true,
+          secure: false,
+        },
+        '/boxes': {
+          target: 'http://135.148.60.85:1750',
+          changeOrigin: true,
+          secure: false,
+        },
+        'clients': {
+          target: 'http://135.148.60.85:1750',
+          changeOrigin: true,
+          secure: false,
+        },
       },
     },
     preview: { port, strictPort: true, open: shouldOpen },
