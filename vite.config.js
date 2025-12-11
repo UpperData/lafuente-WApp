@@ -8,7 +8,12 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
-    server: { port, strictPort: true, open: shouldOpen },
+    server: { 
+      allowedHosts: [
+      'esw.truo.co',   // Servidor de desarrollo upperdata
+      'localhost',     // Servidor local
+    ],
+    port, strictPort: true, open: shouldOpen },
     preview: { port, strictPort: true, open: shouldOpen },
   };
 });
