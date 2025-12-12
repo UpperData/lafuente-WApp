@@ -48,6 +48,8 @@ const ClientCompact = ({
   disableEdit = false,
   canCreate = true, // compat opcional
   canEdit = true,   // compat opcional
+  // NUEVO: parámetros extra para /clients/list
+  queryParams = {},
 }) => {
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -69,7 +71,9 @@ const ClientCompact = ({
   const loadClients = async () => {
     setLoading(true);
     try {
-      const res = await axios.get('/clients/list', { params: { isActived: true }, headers });
+      // Mezclar isActived=true con los params externos
+      const params = { isActived: true, ...queryParams };
+      const res = await axios.get('/clients/list', { params, headers });
       const list = res.data?.rs ?? res.data ?? [];
       setClients(Array.isArray(list) ? list : []);
     } catch {
@@ -81,8 +85,8 @@ const ClientCompact = ({
 
   useEffect(() => {
     loadClients();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    // recargar si cambian los params externos
+  }, [/* ...existing deps..., */ JSON.stringify(queryParams)]);
 
   const options = useMemo(() => clients, [clients]);
 

@@ -47,6 +47,7 @@ const OutputTransactionManagement = () => {
             disableEdit
             canCreate={false}
             canEdit={false}
+            queryParams={{ withTransactions: true }} // agrega withTransactions=true
           />
 
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>

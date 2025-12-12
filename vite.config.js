@@ -8,52 +8,18 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
-    server: {
-      allowedHosts: ['esw.truo.co','localhost'],
-      port, strictPort: true, open: shouldOpen,
-      proxy: {
-        '/masters': {
-          target: 'http://135.148.60.85:1750',
-          changeOrigin: true,
-          secure: false,
-        },
-        '/transactions': {
-          target: 'http://135.148.60.85:1750',
-          changeOrigin: true,
-          secure: false,
-        },
-        '/datatoken': {
-          target: 'http://135.148.60.85:1750',
-          changeOrigin: true,
-          secure: false,
-        },
-        '/bank-accounts': {
-          target: 'http://135.148.60.85:1750',
-          changeOrigin: true,
-          secure: false,
-        },
-        '/accounts': {
-          target: 'http://135.148.60.85:1750',
-          changeOrigin: true,
-          secure: false,
-        },
-        '/services': {
-          target: 'http://135.148.60.85:1750',
-          changeOrigin: true,
-          secure: false,
-        },
-        '/boxes': {
-          target: 'http://135.148.60.85:1750',
-          changeOrigin: true,
-          secure: false,
-        },
-        'clients': {
-          target: 'http://135.148.60.85:1750',
-          changeOrigin: true,
-          secure: false,
-        },
-      },
+    server: { 
+      allowedHosts: [
+      'esw.truo.co',   // Servidor de desarrollo upperdata
+      'localhost',     // Servidor local
+    ],
+    port, 
+    strictPort: true, 
+    open: shouldOpen },
+    preview: { 
+      port, 
+      strictPort: true, 
+      open: shouldOpen 
     },
-    preview: { port, strictPort: true, open: shouldOpen },
   };
 });
