@@ -6,6 +6,10 @@ import TextField from '@mui/material/TextField';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import configAxios from '../api/configAxios';
+import IconButton from '@mui/material/IconButton';
+import InputAdornment from '@mui/material/InputAdornment';
+import Visibility from '@mui/icons-material/Visibility';
+import VisibilityOff from '@mui/icons-material/VisibilityOff';
 
 const Login = () => {
   const navigate = useNavigate();
@@ -14,6 +18,7 @@ const Login = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -56,12 +61,26 @@ const Login = () => {
         />
         <TextField
           label="Contraseña"
-          type="password"
+          type={showPassword ? 'text' : 'password'}
           fullWidth
           margin="normal"
           value={password}
           onChange={e => setPassword(e.target.value)}
           required
+          InputProps={{
+            endAdornment: (
+              <InputAdornment position="end">
+                <IconButton
+                  aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                  onClick={() => setShowPassword(s => !s)}
+                  onMouseDown={(e) => e.preventDefault()}
+                  edge="end"
+                >
+                  {showPassword ? <VisibilityOff /> : <Visibility />}
+                </IconButton>
+              </InputAdornment>
+            ),
+          }}
         />
         {error && <Typography color="error" variant="body2">{error}</Typography>}
         <Button

@@ -10,6 +10,7 @@ import Chip from '@mui/material/Chip';
 
 import ClientCompact from '../components/ClientCompact';
 import OutputTransaction from '../components/OutputTransaction';
+import PayTransaction from '../components/PayTransaction';
 
 const OutputTransactionManagement = () => {
   const [client, setClient] = useState(null);
@@ -80,6 +81,13 @@ const OutputTransactionManagement = () => {
       </Paper>
 
       <OutputTransaction
+        clientId={clientId}
+        clientName={clientName}
+        createdAtFrom={createdAtFrom}
+        createdAtTo={createdAtTo}
+      />
+      {/* Si prefieres abrir el pago desde esta página, puedes pasar handlers al OutputTransaction */}
+      <PayTransaction
         clientId={clientId}
         clientName={clientName}
         createdAtFrom={createdAtFrom}
