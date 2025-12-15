@@ -61,17 +61,19 @@ const AddInputTransaction = ({ open, onClose, clientId, initialData, onSaved }) 
 
   // Modal "Destino de dinero"
   const [destOpen, setDestOpen] = useState(false);
-  const [destType, setDestType] = useState('bank'); // 'bank' | 'person'
-  const [destForm, setDestForm] = useState({
-    // person
-    person: '',
-    docId: '',
-    phone: '',
-    // bank
-    bankName: '',
-    accId: '',
-    holder: '',
-  });
+  const [destType, setDestType] = useState('bank'); // se mantiene para mostrar layout actual
+  // NUEVO: arreglo de items destino con estructura solicitada
+  const [destItems, setDestItems] = useState([{ bankName: '', accDocument: '', Phone: '', amount: '' }]);
+  const [destNote, setDestNote] = useState('');
+
+  const addDestItem = () =>
+    setDestItems((prev) => [...prev, { bankName: '', accDocument: '', Phone: '', amount: '' }]);
+
+  const removeDestItem = (idx) =>
+    setDestItems((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== idx) : prev));
+
+  const updateDestItem = (idx, key, value) =>
+    setDestItems((prev) => prev.map((it, i) => (i === idx ? { ...it, [key]: value } : it)));
 
   // Cargar servicios cuando abre el modal
   useEffect(() => {
@@ -722,45 +724,59 @@ const AddInputTransaction = ({ open, onClose, clientId, initialData, onSaved }) 
 
   // Abrir modal de destino
   const handleOpenDestination = () => {
+    // derivar tipo anterior (person/bank) solo para rellenar si existía
     const id = getServiceTypeDestinationId();
     const type = id === 2 ? 'person' : 'bank';
     setDestType(type);
-    const existing = form.destinationPayInfo || 
-    parseJsonMaybe(initialData?.destinationPayInfo) || {};
-    if (type === 'person') {
-      setDestForm({
-        person: existing.person || '',
-        docId: existing.docId || '',
-        phone: existing.phone || '',
-        bankName: '',
-        accId: '',
-        holder: '',
-      });
-    } else {
-      setDestForm({
-        person: '',
-        docId: '',
-        phone: '',
-        bankName: existing.bankName || '',
-        accId: existing.accId || '',
-        holder: existing.holder || '',
-      });
-    }
+
+    const existing =
+      form.destinationPayInfo ||
+      parseJsonMaybe(initialData?.destinationPayInfo) ||
+      {};
+
+    const items = Array.isArray(existing?.items)
+      ? existing.items
+      : existing && (existing.bankName || existing.accDocument || existing.accId || existing.Phone || existing.phone)
+      ? [existing]
+      : [];
+
+    const normalized =
+      items.length > 0
+        ? items.map((it) => ({
+            bankName: it.bankName ?? '',
+            accDocument: it.accDocument ?? it.accId ?? '',
+            Phone: it.Phone ?? it.phone ?? it.holder ?? '',
+            amount: it.amount ?? it.amonut ?? '', // Monto (amount en el arreglo)
+          }))
+        : [{ bankName: '', accDocument: '', Phone: '', amount: '' }];
+
+    setDestItems(normalized);
+    setDestNote(existing?.note ?? '');
     setDestOpen(true);
   };
+
   const handleCloseDestination = () => setDestOpen(false);
-  const handleChangeDest = (e) => {
-    const { name, value } = e.target;
-    setDestForm((f) => ({ ...f, [name]: value }));
-  };
+
+  // REEMPLAZA: guardar destino usando items[] (multi ítems)
   const handleSaveDestination = () => {
-    const id = getServiceTypeDestinationId();
-    const type = id === 2 ? 'person' : 'bank';
-    const payload =
-      type === 'person'
-        ? { person: destForm.person?.trim() || '', docId: destForm.docId?.trim() || '', phone: destForm.phone?.trim() || '' }
-        : { bankName: destForm.bankName?.trim() || '', accId: destForm.accId?.trim() || '', holder: destForm.holder?.trim() || '' };
-    setForm((f) => ({ ...f, destinationPayInfo: payload }));
+    const cleaned = destItems
+      .map((it) => ({
+        bankName: String(it.bankName || '').trim(),
+        accDocument: String(it.accDocument || '').trim(),
+        Phone: String(it.Phone || '').trim(),
+        amount: String(it.amount || '').trim(), // guardar Monto como string; convierte si necesitas número
+      }))
+      .filter((it) => it.bankName || it.accDocument || it.Phone || it.amount);
+
+    setForm((f) => ({
+      ...f,
+      destinationPayInfo: {
+        // mantiene type previo si existía; si necesitas 'cash'/'electronic', se puede derivar del servicio
+        type: f.destinationPayInfo?.type ?? destType,
+        items: cleaned,
+        note: destNote || '',
+      },
+    }));
     setDestOpen(false);
   };
 
@@ -819,6 +835,14 @@ const AddInputTransaction = ({ open, onClose, clientId, initialData, onSaved }) 
       }, 0),
     [cashItems]
   );
+
+  // Sumatoria de montos destino
+  const totalDestinationAmount = useMemo(() => {
+    return destItems.reduce((sum, it) => {
+      const n = Number(it.amount);
+      return Number.isFinite(n) ? sum + n : sum;
+    }, 0);
+  }, [destItems]);
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
@@ -1418,75 +1442,101 @@ const AddInputTransaction = ({ open, onClose, clientId, initialData, onSaved }) 
         </DialogActions>
       </Dialog>
 
-      {/* Diálogo secundaria: Destino de dinero */}
+      {/* Diálogo secundaria: Destino de fondos */}
       <Dialog open={destOpen} onClose={handleCloseDestination} maxWidth="sm" fullWidth>
-        <DialogTitle>Destino de dinero</DialogTitle>
+        <DialogTitle>Destino de fondos</DialogTitle>
         <DialogContent dividers>
-          {destType === 'person' ? (
-            <Grid container spacing={2}>
-              <Grid item xs={12} md={6}>
-                <TextField
-                  label="Persona recibe"
-                  name="person"
-                  value={destForm.person}
-                  onChange={handleChangeDest}
-                  fullWidth
-                />
-              </Grid>
-              <Grid item xs={12} md={3}>
-                <TextField
-                  label="Cédula"
-                  name="docId"
-                  value={destForm.docId}
-                  onChange={handleChangeDest}
-                  fullWidth
-                />
-              </Grid>
-              <Grid item xs={12} md={3}>
-                <TextField
-                  label="Teléfono"
-                  name="phone"
-                  value={destForm.phone}
-                  onChange={handleChangeDest}
-                  fullWidth
-                />
-              </Grid>
-            </Grid>
-          ) : (
-            <Grid container spacing={2}>
-              <Grid item xs={12} md={6}>
-                <TextField
-                  label="Banco"
-                  name="bankName"
-                  value={destForm.bankName}
-                  onChange={handleChangeDest}
-                  fullWidth
-                />
-              </Grid>
-              <Grid item xs={12} md={3}>
-                <TextField
-                  label="Num. Cuenta"
-                  name="accId"
-                  value={destForm.accId}
-                  onChange={handleChangeDest}
-                  fullWidth
-                />
-              </Grid>
-              <Grid item xs={12} md={3}>
-                <TextField
-                  label="Titular"
-                  name="holder"
-                  value={destForm.holder}
-                  onChange={handleChangeDest}
-                  fullWidth
-                />
-              </Grid>
-            </Grid>
-          )}
+          <Stack spacing={2}>
+            {/* Nota */}
+            <TextField
+              label="Nota"
+              value={destNote}
+              onChange={(e) => setDestNote(e.target.value)}
+              fullWidth
+            />
+
+            {/* Ítems destino con ícono + para agregar varios */}
+            <Stack spacing={1}>
+              <Stack direction="row" alignItems="center" justifyContent="space-between">
+                <Typography variant="subtitle2">Items destino</Typography>
+                <IconButton color="primary" onClick={addDestItem} size="small">
+                  <AddCircleOutlineIcon />
+                </IconButton>
+              </Stack>
+
+              {destItems.length === 0 && (
+                <Typography variant="body2" color="text.secondary">
+                  No hay items. Use el botón + para agregar.
+                </Typography>
+              )}
+
+              {destItems.map((it, idx) => (
+                <Stack key={idx} direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems="center">
+                  <TextField
+                    label="Banco / Persona"
+                    value={it.bankName}
+                    onChange={(e) => updateDestItem(idx, 'bankName', e.target.value)}
+                    sx={{ flex: 1 }}
+                  />
+                  <TextField
+                    label="Cuenta / Cédula"
+                    value={it.accDocument}
+                    onChange={(e) => updateDestItem(idx, 'accDocument', e.target.value)}
+                    sx={{ flex: 1 }}
+                  />
+                  <TextField
+                    label="Teléfono"
+                    value={it.Phone}
+                    onChange={(e) => updateDestItem(idx, 'Phone', e.target.value)}
+                    sx={{ flex: 1 }}
+                  />
+                  {/* Monto (amount en el arreglo) */}
+                  <TextField
+                    label="Monto"
+                    type="number"
+                    inputProps={{ min: 0, step: '0.01' }}
+                    value={it.amount}
+                    onChange={(e) => updateDestItem(idx, 'amount', e.target.value)}
+                    sx={{ flex: 1 }}
+                  />
+                  <IconButton
+                    color="error"
+                    onClick={() => removeDestItem(idx)}
+                    size="small"
+                    disabled={destItems.length === 1}
+                    sx={{ ml: { sm: 1 } }}
+                  >
+                    <RemoveCircleOutlineIcon />
+                  </IconButton>
+                </Stack>
+              ))}
+
+              {/* Warning: total supera monto neto */}
+              {(() => {
+                const net = Number(netAmount);
+                const totalDest = Number(totalDestinationAmount);
+                const showWarn = Number.isFinite(net) && Number.isFinite(totalDest) && totalDest > net;
+                return showWarn ? (
+                  <Typography variant="body2" sx={{ color: 'warning.main', fontWeight: 600 }}>
+                    Total supera monto neto
+                  </Typography>
+                ) : (
+                  <Stack direction="row" justifyContent="space-between">
+                    <Typography variant="caption" color="text.secondary">
+                      Total destino: {totalDestinationAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Monto neto: {netAmount || '-'}
+                    </Typography>
+                  </Stack>
+                );
+              })()}
+            </Stack>
+          </Stack>
         </DialogContent>
         <DialogActions>
           <Button onClick={handleCloseDestination}>Cancelar</Button>
-          <Button variant="contained" onClick={handleSaveDestination}>
+          <Button variant="contained" onClick={handleSaveDestination} disabled={destItems.length === 0}>
             Guardar
           </Button>
         </DialogActions>

@@ -9,6 +9,7 @@ import Layout from '../components/Layout';
 import BoxManagement from '../pages/BoxManagement';
 import InputTransactionManagement from '../pages/InputTransactionManagement';
 import OutputTransactionManagement from '../pages/OutputTransactionManagement';
+import AccountUserManagement from '../pages/AccountUserManagement';
 
 // Utilidades locales para validar token (sin verificar firma)
 const decodeJwt = (token) => {
@@ -101,6 +102,16 @@ const AppRoutes = () => (
           <RequireAuth>
             <Layout>
               <OutputTransactionManagement />
+            </Layout>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/user/management"
+        element={
+          <RequireAuth>
+            <Layout>
+              <AccountUserManagement />
             </Layout>
           </RequireAuth>
         }

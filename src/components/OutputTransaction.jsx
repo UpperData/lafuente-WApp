@@ -23,6 +23,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import PaidIcon from '@mui/icons-material/Paid';
 import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
+import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import PayTransaction from './PayTransaction';
 
 const Circle = ({ color = '#ccc', size = 12 }) => (
@@ -50,6 +51,8 @@ const OutputTransaction = ({ clientId, clientName, createdAtFrom, createdAtTo })
   const [activeGroup, setActiveGroup] = useState(null);
   const [payOpen, setPayOpen] = useState(false);
   const [payCtx, setPayCtx] = useState(null);
+  const [destModalOpen, setDestModalOpen] = useState(false);
+  const [destModalData, setDestModalData] = useState(null);
 
   const header = useMemo(() => {
     const range =
@@ -210,6 +213,66 @@ const OutputTransaction = ({ clientId, clientName, createdAtFrom, createdAtTo })
   };
   const handleCancelSingle = (r) => { /* implementar */ };
 
+  const openDestinationModalForGroup = (group) => {
+    // Prioriza destino del grupo, si no, intenta del primer item
+    const fromGroup = group.payDestination || null;
+    const fromFirst =
+      group.list?.[0]?.destinationPayInfo ||
+      group.list?.[0]?.['Transaction.destinationPayInfo'] ||
+      null;
+
+    // Normaliza a items[]
+    let items = [];
+    if (Array.isArray(fromGroup?.items)) {
+      items = fromGroup.items;
+    } else if (Array.isArray(fromFirst?.items)) {
+      items = fromFirst.items;
+    } else if (fromGroup) {
+      items = [fromGroup];
+    } else if (fromFirst) {
+      items = [fromFirst];
+    }
+
+    setDestModalData({
+      title: `Cuenta destino - Grupo ${group.name || group.id}`,
+      items: items.map((it) => ({
+        bankName: it.bankName ?? it.label ?? '',
+        accDocument: it.accDocument ?? it.accId ?? it.identificator ?? '',
+        phone: it.Phone ?? it.phone ?? it.holder ?? '',
+        amount: it.amount ?? '',
+      })),
+      note:
+        fromGroup?.note ??
+        fromFirst?.note ??
+        '',
+      type:
+        fromGroup?.type ??
+        fromFirst?.type ??
+        '',
+    });
+    setDestModalOpen(true);
+  };
+
+  const openDestinationModalForSingle = (r) => {
+    const info = r.destinationPayInfo || r['Transaction.destinationPayInfo'] || null;
+    let items = [];
+    if (Array.isArray(info?.items)) items = info.items;
+    else if (info) items = [info];
+
+    setDestModalData({
+      title: `Cuenta destino - Tx ${r.id}`,
+      items: items.map((it) => ({
+        bankName: it.bankName ?? it.label ?? '',
+        accDocument: it.accDocument ?? it.accId ?? it.identificator ?? '',
+        phone: it.Phone ?? it.phone ?? it.holder ?? '',
+        amount: it.amount ?? '',
+      })),
+      note: info?.note ?? '',
+      type: info?.type ?? '',
+    });
+    setDestModalOpen(true);
+  };
+
   return (
     <Box>
       {loading && <LinearProgress sx={{ mb: 1 }} />}
@@ -248,11 +311,12 @@ const OutputTransaction = ({ clientId, clientName, createdAtFrom, createdAtTo })
               <TableCell>F. Retiro</TableCell>
               <TableCell>Tipo</TableCell>
               <TableCell>Monto</TableCell>
+              <TableCell>Cta destino</TableCell> {/* NUEVA COLUMNA */}
               <TableCell>Acciones</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
-            {/* filas agrupadas (una por grupo) */}
+            {/* filas agrupadas */}
             {grouped.map((g) => {
               const inputDateStr = g.inputDate ? new Date(g.inputDate).toLocaleDateString() : '-';
               const deliveryDateStr = g.deliveryDate ? new Date(g.deliveryDate).toLocaleDateString() : '-';
@@ -275,6 +339,20 @@ const OutputTransaction = ({ clientId, clientName, createdAtFrom, createdAtTo })
                   <TableCell>{g.serviceType}</TableCell>
                   <TableCell>
                     {g.currencySymbol ? `${g.currencySymbol} ${g.totalAmount}` : g.totalAmount}
+                  </TableCell>
+                  {/* Botón Cta destino (grupo) */}
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <Tooltip title="Ver cuenta(s) destino" arrow>
+                      <span>
+                        <IconButton
+                          size="small"
+                          color="primary"
+                          onClick={() => openDestinationModalForGroup(g)}
+                        >
+                          <AccountBalanceIcon fontSize="small" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <Stack direction="row" spacing={0.5} alignItems="center">
@@ -305,7 +383,7 @@ const OutputTransaction = ({ clientId, clientName, createdAtFrom, createdAtTo })
               );
             })}
 
-            {/* filas no agrupadas (transactionGroupId == null) */}
+            {/* filas no agrupadas */}
             {singles.map((r) => {
               const gName = r['TransactionGroup.name'] ?? r.transactionGroupName ?? '';
               const gNote = r['TransactionGroup.note'] ?? r.transactionGroupNote ?? '';
@@ -314,7 +392,6 @@ const OutputTransaction = ({ clientId, clientName, createdAtFrom, createdAtTo })
               const deliveryDateStr = r.deliveryDate ? new Date(r.deliveryDate).toLocaleDateString() : '-';
               const serviceType = r['Service.ServiceType.name'] ?? r.serviceTypeName ?? '-';
 
-              // NEW: símbolo y formateo por fila
               const currencySymbol =
                 r['Service.currencyDestination.symbol'] ??
                 r.Service?.currencyDestination?.symbol ??
@@ -350,6 +427,20 @@ const OutputTransaction = ({ clientId, clientName, createdAtFrom, createdAtTo })
                     {r.amount != null
                       ? (currencySymbol ? `${currencySymbol} ${formattedAmount}` : formattedAmount)
                       : '-'}
+                  </TableCell>
+                  {/* Botón Cta destino (single) */}
+                  <TableCell>
+                    <Tooltip title="Ver cuenta(s) destino" arrow>
+                      <span>
+                        <IconButton
+                          size="small"
+                          color="primary"
+                          onClick={() => openDestinationModalForSingle(r)}
+                        >
+                          <AccountBalanceIcon fontSize="small" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
                   </TableCell>
                   <TableCell>
                     <Stack direction="row" spacing={0.5} alignItems="center">
@@ -479,6 +570,54 @@ const OutputTransaction = ({ clientId, clientName, createdAtFrom, createdAtTo })
             }}
           />
         </DialogContent>
+      </Dialog>
+
+      {/* Modal: cuenta(s) destino */}
+      <Dialog open={destModalOpen} onClose={() => setDestModalOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle sx={{ pb: 1 }}>
+          {destModalData?.title || 'Cuenta(s) destino'}
+        </DialogTitle>
+        <DialogContent dividers>
+          {Array.isArray(destModalData?.items) && destModalData.items.length > 0 ? (
+            <Stack spacing={1.25}>
+              {destModalData.items.map((it, idx) => (
+                <Paper key={idx} variant="outlined" sx={{ p: 1.25 }}>
+                  <Stack spacing={0.5}>
+                    <Typography variant="body2">
+                      Banco: <strong>{it.bankName || '-'}</strong>
+                    </Typography>
+                    <Typography variant="body2">
+                      Documento/Cuenta: <strong>{it.accDocument || '-'}</strong>
+                    </Typography>
+                    <Typography variant="body2">
+                      Teléfono: <strong>{it.phone || '-'}</strong>
+                    </Typography>
+                    {it.amount != null && it.amount !== '' && (
+                      <Typography variant="body2">
+                        Monto: <strong>{it.amount}</strong>
+                      </Typography>
+                    )}
+                  </Stack>
+                </Paper>
+              ))}
+              {!!destModalData?.note && (
+                <Typography variant="caption" color="text.secondary">
+                  Nota: {destModalData.note}
+                </Typography>
+              )}
+              {!!destModalData?.type && (
+                <Typography variant="caption" color="text.secondary">
+                  Tipo: {destModalData.type}
+                </Typography>
+              )}
+            </Stack>
+          ) : (
+            <Typography variant="body2" color="text.secondary">Sin cuentas destino asociadas.</Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDestModalOpen(false)}>Cerrar</Button>
+        </DialogActions>
       </Dialog>
     </Box>
   );
