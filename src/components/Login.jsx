@@ -29,6 +29,7 @@ const Login = () => {
       .then(async function(rsLogin) {
         if (rsLogin.data.result === 'success') {
           localStorage.setItem('token', rsLogin.data.token);
+          localStorage.setItem('profile', JSON.stringify(rsLogin.data.account));
           setIsLoggedIn(true);
           navigate('/dashboard');
         }else if(rsLogin.data.result === 'warning'){

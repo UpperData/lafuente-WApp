@@ -10,6 +10,8 @@ import BoxManagement from '../pages/BoxManagement';
 import InputTransactionManagement from '../pages/InputTransactionManagement';
 import OutputTransactionManagement from '../pages/OutputTransactionManagement';
 import AccountUserManagement from '../pages/AccountUserManagement';
+import  ProfileAccountUser from '../components/ProfileAccountUser';
+import About from '../components/About';
 
 // Utilidades locales para validar token (sin verificar firma)
 const decodeJwt = (token) => {
@@ -106,12 +108,35 @@ const AppRoutes = () => (
           </RequireAuth>
         }
       />
+      {/* Gestión de cuentas de usuario */}
       <Route
         path="/user/management"
         element={
           <RequireAuth>
             <Layout>
               <AccountUserManagement />
+            </Layout>
+          </RequireAuth>
+        }
+      />
+      {/* Perfil de usuario */     }
+        <Route
+          path="/user/profile"
+          element={
+            <RequireAuth>
+              <Layout>
+                <ProfileAccountUser />
+              </Layout>
+            </RequireAuth>
+          }
+        />
+      {/* Página Acerca de */}
+      <Route
+        path="/about"
+        element={
+          <RequireAuth>
+            <Layout>
+              <About />
             </Layout>
           </RequireAuth>
         }

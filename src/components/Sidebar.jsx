@@ -45,7 +45,7 @@ const Sidebar = ({ open = true, width = 240 }) => {
         console.log('Menú cargado:', res.data);
         // Convertir el objeto a array de items
         const menuArr = Object.values(res.data.rs || {});
-        menuArr.unshift({ name: 'Perfil', url: '/profile', icon: 'fa-solid fa-user' });
+        menuArr.unshift({ name: 'Perfil', url: '/user/profile', icon: 'fa-solid fa-user' });
         menuArr.unshift({ name: 'Dashboard', url: '/dashboard', icon: 'fa-solid fa-house' });        
         menuArr.push({ name: 'Acerca de', url: '/about', icon: 'fa-solid fa-info-circle' });
         setMenuItems(menuArr);

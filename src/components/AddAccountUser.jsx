@@ -16,15 +16,38 @@ const DAYS = [
 
 const emptyCalendar = DAYS.map((d) => ({ day: d.value, start: '', end: '' }));
 
+// Calendario predeterminado para nuevo usuario
+const defaultCalendar = [
+  { day: '0', start: '00:00', end: '00:00' },
+  { day: '1', start: '07:00', end: '17:00' },
+  { day: '2', start: '07:00', end: '17:00' },
+  { day: '3', start: '07:00', end: '17:00' },
+  { day: '4', start: '07:00', end: '17:00' },
+  { day: '5', start: '07:00', end: '17:00' },
+  { day: '6', start: '07:00', end: '17:00' },
+];
+
 const AddAccountUser = ({ open = true, onClose, initialData }) => {
   const [roles, setRoles] = useState([]);
   const [loadingRoles, setLoadingRoles] = useState(false);
+
+  // Normaliza roleId y nombre del rol desde initialData (editar)
+  const initialRoleId =
+    initialData?.roleId ??
+    initialData?.['Role.id'] ??
+    initialData?.Role?.id ??
+    '';
+
+  const initialRoleName =
+    initialData?.['Role.name'] ??
+    initialData?.Role?.name ??
+    '';
 
   const [form, setForm] = useState({
     email: initialData?.email ?? '',
     pass: '',
     phoneNumber: initialData?.phoneNumber ?? '',
-    roleId: initialData?.roleId ? String(initialData.roleId) : '',
+    roleId: initialRoleId ? String(initialRoleId) : '', // asegura selección al editar
     person: {
       documentId: initialData?.person?.documentId ?? '',
       firstName: initialData?.person?.firstName ?? '',
@@ -37,14 +60,14 @@ const AddAccountUser = ({ open = true, onClose, initialData }) => {
           start: c.start ?? '',
           end: c.end ?? '',
         }))
-      : emptyCalendar,
+      : defaultCalendar,
   });
 
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const isEdit = useMemo(() => !!initialData?.id, [initialData]);
 
-  // Cargar roles activos
+  // Cargar roles activos (acepta arreglo directo o data.rs)
   useEffect(() => {
     let active = true;
     const loadRoles = async () => {
@@ -55,7 +78,7 @@ const AddAccountUser = ({ open = true, onClose, initialData }) => {
           params: { isActived: true },
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         });
-        if (active) setRoles(Array.isArray(data.rs) ? data.rs : []);
+        if (active) setRoles(Array.isArray(data) ? data : (Array.isArray(data?.rs) ? data.rs : []));
       } catch (err) {
         console.error('GET /accounts/roles error:', err);
         if (active) setRoles([]);
@@ -66,6 +89,16 @@ const AddAccountUser = ({ open = true, onClose, initialData }) => {
     loadRoles();
     return () => { active = false; };
   }, []);
+
+  // Mantén sincronizado roleId si cambia initialData
+  useEffect(() => {
+    const rid =
+      initialData?.roleId ??
+      initialData?.['Role.id'] ??
+      initialData?.Role?.id ??
+      '';
+    setForm((f) => ({ ...f, roleId: rid ? String(rid) : '' }));
+  }, [initialData?.roleId, initialData?.['Role.id'], initialData?.Role?.id]);
 
   const updatePerson = (key, value) =>
     setForm((f) => ({ ...f, person: { ...f.person, [key]: value } }));
@@ -120,7 +153,7 @@ const AddAccountUser = ({ open = true, onClose, initialData }) => {
       const payload = buildPayload();
       if (isEdit) {
         const id = initialData.id;
-        await axios.put(`/accounts/update:${id}`, payload, {
+        await axios.put(`/accounts/update/${id}`, payload, {
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         });
       } else {

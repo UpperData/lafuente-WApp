@@ -1,7 +1,7 @@
 {
   "name": "la_fuente",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.12.25",
   "type": "module",
   "scripts": {
     "start": "vite",

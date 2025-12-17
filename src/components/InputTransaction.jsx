@@ -494,6 +494,8 @@ const InputTransaction = ({ clientId, clientName, createdAtFrom, createdAtTo, on
                 <TableCell>Envía</TableCell>
                 <TableCell>Recibe</TableCell>
                 <TableCell>Comisiones</TableCell>
+                {/* NUEVA COLUMNA: Cuenta (payInfo.holderName) */}
+                <TableCell>Deudor</TableCell>
                 <TableCell>Operador</TableCell>
                 <TableCell>Acciones</TableCell>
               </TableRow>
@@ -501,7 +503,8 @@ const InputTransaction = ({ clientId, clientName, createdAtFrom, createdAtTo, on
             <TableBody>
               {rows.length === 0 && !loading && (
                 <TableRow>
-                  <TableCell colSpan={10}>
+                  {/* Ajusta colSpan al total de columnas (12) */}
+                  <TableCell colSpan={12}>
                     <Typography variant="body2" color="text.secondary" align="center" py={2}>
                       Sin resultados
                     </Typography>
@@ -664,6 +667,18 @@ const InputTransaction = ({ clientId, clientName, createdAtFrom, createdAtTo, on
                           })()}
                         </Typography>
                       </Tooltip>
+                    </TableCell>
+
+                    {/* NUEVA COLUMNA: Cuenta (payInfo.holderName) */}
+                    <TableCell>
+                      <Typography variant="body2" color="text.secondary">
+                        {row?.payInfo?.holderName
+                          ?? row?.['payInfo.holderName']
+                          ?? row?.payInfo?.holder
+                          ?? row?.['PayInfo.holder']
+                          ?? row?.holderName
+                          ?? '-'}
+                      </Typography>
                     </TableCell>
 
                     {/* Operador */}
