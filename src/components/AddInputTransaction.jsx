@@ -23,6 +23,7 @@ import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
 import Autocomplete from '@mui/material/Autocomplete';
 import CircularProgress from '@mui/material/CircularProgress';
 import Grid from '@mui/material/Grid';
+import Chip from '@mui/material/Chip'; // NUEVO
 
 
 const TX_TYPE = 'input';
@@ -664,7 +665,7 @@ const AddInputTransaction = ({ open, onClose, clientId, initialData, onSaved }) 
         payAccount ||
         '';
       const info = {
-        type: 'digital',
+        type: 'Electronico',
         boxId: payBoxId || '',
         countryId: payCountryId || '',
         bankId: payBankId || '',
@@ -689,7 +690,7 @@ const AddInputTransaction = ({ open, onClose, clientId, initialData, onSaved }) 
             it.quantity > 0
         );
       const info = {
-        type: 'cash',
+        type: 'Efectivo',
         boxId: payBoxId || '',
         currencyId: cashCurrencyId || '',
         items: cleanItems,
@@ -780,11 +781,35 @@ const AddInputTransaction = ({ open, onClose, clientId, initialData, onSaved }) 
     setDestOpen(false);
   };
 
+  // NUEVO: construir 'cash' solo cuando el servicio es efectivo
+  const buildCashPayload = () => {
+    if (!isCash) return undefined;
+    const items = (cashItems || [])
+      .map((it) => ({
+        denomination: Number(it.denomination),
+        quantity: Number(it.quantity),
+      }))
+      .filter(
+        (it) =>
+          Number.isFinite(it.denomination) &&
+          it.denomination > 0 &&
+          Number.isFinite(it.quantity) &&
+          it.quantity > 0
+      );
+    return {
+      currencyId: String(cashCurrencyId || ''),
+      boxId: String(payBoxId || ''),
+      items,
+    };
+  };
+
   // Payload en submit
   const handleSubmit = async () => {
     if (!clientId) return;
     const token = localStorage.getItem('token');
     const headers = { Authorization: `Bearer ${token}` };
+
+    const cashPayload = buildCashPayload();
 
     const payload = {
       type: TX_TYPE,
@@ -801,6 +826,8 @@ const AddInputTransaction = ({ open, onClose, clientId, initialData, onSaved }) 
       evidence: evidenceB64 || '',
       isDiscountInMount: !!form.isDiscountInMount, // RENOMBRADO: antes commissionFromAmount
       ...(payInfo ? { payInfo } : {}),
+      // NUEVO: incluir 'cash' solo si es efectivo
+      ...(cashPayload ? { cash: cashPayload } : {}),
     };
 
     setSaving(true);
@@ -1511,23 +1538,53 @@ const AddInputTransaction = ({ open, onClose, clientId, initialData, onSaved }) 
                 </Stack>
               ))}
 
-              {/* Warning: total supera monto neto */}
+              {/* Resumen destino: Total destino / Restante / Monto neto (resaltado) */}
               {(() => {
-                const net = Number(netAmount);
+                const netNum = Number(netAmount);
                 const totalDest = Number(totalDestinationAmount);
-                const showWarn = Number.isFinite(net) && Number.isFinite(totalDest) && totalDest > net;
-                return showWarn ? (
-                  <Typography variant="body2" sx={{ color: 'warning.main', fontWeight: 600 }}>
-                    Total supera monto neto
-                  </Typography>
-                ) : (
-                  <Stack direction="row" justifyContent="space-between">
-                    <Typography variant="caption" color="text.secondary">
-                      Total destino: {totalDestinationAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Monto neto: {netAmount || '-'}
-                    </Typography>
+                const showWarn =
+                  Number.isFinite(netNum) &&
+                  Number.isFinite(totalDest) &&
+                  totalDest > netNum;
+                const restanteNum =
+                  Number.isFinite(netNum) && Number.isFinite(totalDest)
+                    ? Math.max(netNum - totalDest, 0)
+                    : NaN;
+                const fmt2 = (n) =>
+                  Number.isFinite(n)
+                    ? n.toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })
+                    : '-';
+
+                return (
+                  <Stack spacing={1}>
+                    {showWarn && (
+                      <Typography variant="body2" sx={{ color: 'warning.main', fontWeight: 700 }}>
+                        Total supera monto neto
+                      </Typography>
+                    )}
+                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                      <Chip
+                        label={`Total destino: ${fmt2(totalDest)}`}
+                        color="primary"
+                        variant="outlined"
+                        sx={{ fontWeight: 700 }}
+                      />
+                      <Chip
+                        label={`Restante: ${fmt2(restanteNum)}`}
+                        color={Number.isFinite(restanteNum) && restanteNum > 0 ? 'success' : 'default'}
+                        variant="outlined"
+                        sx={{ fontWeight: 700 }}
+                      />
+                      <Chip
+                        label={`Monto neto: ${typeof netAmount === 'string' ? netAmount : fmt2(netNum)}`}
+                        color="info"
+                        variant="outlined"
+                        sx={{ fontWeight: 700 }}
+                      />
+                    </Stack>
                   </Stack>
                 );
               })()}

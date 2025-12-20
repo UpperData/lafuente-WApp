@@ -30,6 +30,8 @@ import EditIcon from '@mui/icons-material/Edit';
 import NoteAltIcon from '@mui/icons-material/NoteAlt';
 import ImageSearchIcon from '@mui/icons-material/ImageSearch';
 import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
+import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet'; // NUEVO
+import PaidIcon from '@mui/icons-material/Paid'; // NUEVO
 
 import Snackbar from '@mui/material/Snackbar';
 import Alert from '@mui/material/Alert';
@@ -302,6 +304,12 @@ const InputTransaction = ({ clientId, clientName, createdAtFrom, createdAtTo, on
   const [evidenceUrl, setEvidenceUrl] = useState('');
   const [evidenceIsPdf, setEvidenceIsPdf] = useState(false); // NUEVO
 
+  const [fundsOpen, setFundsOpen] = useState(false);            // NUEVO
+  const [fundsData, setFundsData] = useState({                  // NUEVO
+    payInfo: null,
+    destinationPayInfo: null,
+  });
+
   // Helper: construir data URL desde base64 o aceptar data/http url (imagen o PDF)
   const buildEvidenceData = (raw) => {
     const empty = { url: '', isPdf: false };
@@ -330,6 +338,13 @@ const InputTransaction = ({ clientId, clientName, createdAtFrom, createdAtTo, on
     setEvidenceUrl(url);
     setEvidenceIsPdf(isPdf);
     setEvidenceOpen(true);
+  };
+
+  // NUEVO: abrir modal de Nota
+  const openNoteModal = (row) => {
+    const note = row?.note;
+    setNoteText(note == null ? '' : String(note));
+    setNoteOpen(true);
   };
 
   const openEditModal = (row) => {
@@ -428,15 +443,226 @@ const InputTransaction = ({ clientId, clientName, createdAtFrom, createdAtTo, on
   };
 
   // NUEVO: calcular monto de comisión basado en "M. Envía"
-  const commissionAmount = (t) => {
-    const sendAmount = Number(t?.amount ?? 0);
-    const { alter, base, daily } = commissionNumbers(t);
-    const totalPct =
-      (Number.isFinite(base) ? base : 0) +
-      (Number.isFinite(daily) ? daily : 0) +
-      (Number.isFinite(alter) ? alter : 0);
-    const value = (sendAmount * totalPct) / 100;
-    return Number.isFinite(value) ? value : 0;
+  const commissionAmount = (row) => {
+    const sendAmount = Number(row.amount ?? row.amountOrigin ?? row['Transaction.amount'] ?? 0);
+    const { alter, base, daily } = commissionNumbers(row);
+    const totalPct = [base, alter, daily]
+      .map((n) => Number(n))
+      .filter((n) => Number.isFinite(n))
+      .reduce((a, b) => a + b, 0);
+
+    if (!Number.isFinite(sendAmount) || !Number.isFinite(totalPct)) return 0;
+
+    const isDiscount = !!(row.isDiscountInMount ?? row['isDiscountInMount']);
+    // Ajuste solicitado: si isDiscountInMount=true usar (sendAmount * totalPct)/(100+(sendAmount * totalPct))
+    if (isDiscount) {
+      return (sendAmount * totalPct) / (100 +  totalPct);
+    }
+    return (sendAmount * totalPct) / 100;
+  };
+
+  // NUEVO: normalizar payInfo
+  const normalizePayInfo = (row) => {
+    const p = row?.payInfo ?? row?.PayInfo ?? null;
+    if (!p && !row?.['payInfo.holderName']) return null;
+    return {
+      box: p?.box ?? '',
+      note: p?.note ?? '',
+      type: p?.type ?? '',
+      boxId: p?.boxId ?? '',
+      bankId: p?.bankId ?? p?.bank?.id ?? '',
+      account: p?.account ?? p?.accNumber ?? p?.accountNumber ?? '',
+      country: p?.country ?? '',
+      currency: p?.currency ?? p?.currencyName ?? '',
+      accountId: p?.accountId ?? '',
+      countryId: p?.countryId ?? '',
+      reference: p?.reference ?? p?.ref ?? '',
+      currencyId: p?.currencyId ?? '',
+      holderName:
+        p?.holderName ??
+        p?.holder ??
+        row?.holderName ??
+        row?.['payInfo.holderName'] ??
+        '',
+    };
+  };
+
+  // NUEVO: normalizar destinationPayInfo
+  const normalizeDestinationPayInfo = (row) => {
+    const d =
+      row?.destinationPayInfo ??
+      row?.['Transaction.destinationPayInfo'] ??
+      row?.['destinationPayInfo'] ??
+      null;
+    if (!d) return null;
+
+    const items = Array.isArray(d.items) ? d.items : [];
+    const mapped = items.map((it) => ({
+      accId: it?.accId ?? it?.accountId ?? null,
+      phone: it?.phone ?? it?.Phone ?? null,
+      amount: it?.amount ?? it?.amonut ?? '',
+      bankId: it?.bankId ?? it?.bank?.id ?? null,
+      holder: it?.holder ?? it?.holderName ?? null,
+      bankName: it?.bankName ?? it?.bank?.name ?? null,
+      accDocument: it?.accDocument ?? it?.identificator ?? it?.accId ?? it?.account ?? null,
+    }));
+    return {
+      note: d?.note ?? null,
+      type: d?.type ?? null,
+      items: mapped,
+    };
+  };
+
+  // NUEVO: obtener ServiceType destino (1=electrónico, 2=persona/efectivo)
+  const destinationServiceTypeOf = (row) => {
+    const raw =
+      row?.['DestinationService.ServiceType.id'] ??
+      row?.DestinationService?.ServiceType?.id ??
+      row?.['destinationServiceTypeId'] ??
+      row?.destinationServiceTypeId ??
+      row?.['Destination.ServiceType.id'] ??
+      row?.['destinationTypeId'] ??
+      row?.destinationTypeId ??
+      null;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  // NUEVO: tipo de servicio origen (1=electrónico, 2=efectivo)
+  const sourceServiceTypeOf = (row) => {
+    const raw =
+      row?.['Service.ServiceType.id'] ??
+      row?.Service?.ServiceType?.id ??
+      row?.['serviceTypeId'] ??
+      row?.serviceTypeId ??
+      row?.['ServiceType.id'] ??
+      null;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  // NUEVO: total efectivo desde payInfo.items (denomination * quantity)
+  const computeCashPayTotal = (row) => {
+    const p = row?.payInfo ?? row?.PayInfo ?? null;
+    if (!p) return 0;
+    let items = p.items ?? row?.['payInfo.items'] ?? null;
+    if (typeof items === 'string') {
+      try { items = JSON.parse(items); } catch { items = null; }
+    }
+    if (!Array.isArray(items)) return 0;
+    return items.reduce((sum, it) => {
+      const denom = Number(it?.denomination ?? 0);
+      const qty = Number(it?.quantity ?? it?.quatity ?? 0);
+      if (Number.isFinite(denom) && Number.isFinite(qty)) return sum + denom * qty;
+      return sum;
+    }, 0);
+  };
+
+  // NUEVO: caches para nombres de Caja y Banco
+  const [boxNameCache, setBoxNameCache] = useState({});
+  const [bankNameCache, setBankNameCache] = useState({});
+
+  // NUEVO: obtiene nombre de la Caja por id (API: /boxes/get/:boxId)
+  const getBoxNameById = async (boxId) => {
+    if (!boxId) return '';
+    const key = String(boxId);
+    if (boxNameCache[key]) return boxNameCache[key];
+    try {
+      const token = localStorage.getItem('token');
+      const { data } = await axios.get(`/boxes/get/${key}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      const name = data.rs?.name ?? data.rs?.box?.name ?? data.rs?.Box?.name ?? data.rs?.data?.name ?? '';
+      if (name) {
+        setBoxNameCache((prev) => ({ ...prev, [key]: name }));
+        return name;
+      }
+      return '';
+    } catch (e) {
+      console.error('GET /boxes/get/:boxId error:', e?.response?.data || e?.message);
+      return '';
+    }
+  };
+
+  // NUEVO: obtiene nombre del Banco por id (API: /masters/banks?id=:bankId)
+  const getBankNameById = async (bankId) => {
+    if (!bankId) return '';
+    const key = String(bankId);
+    if (bankNameCache[key]) return bankNameCache[key];
+    try {
+      const token = localStorage.getItem('token');
+      const { data } = await axios.get('/masters/banks', {
+        params: { id: key },
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      const arr = Array.isArray(data) ? data : (Array.isArray(data?.rs) ? data.rs : []);
+      const name = arr?.[0]?.name ?? '';
+      if (name) {
+        setBankNameCache((prev) => ({ ...prev, [key]: name }));
+        return name;
+      }
+      return '';
+    } catch (e) {
+      console.error('GET /masters/banks?id=:bankId error:', e?.response?.data || e?.message);
+      return '';
+    }
+  };
+
+  // ACTUALIZADO: mapeo de etiquetas para modal Fondos (incluye Caja y Banco)
+  const labelForFundsKey = (key, destType) => {
+    switch (key) {
+      case 'boxId': return 'Caja';
+      case 'bankId': return 'Banco';
+      case 'type': return 'Tipo';
+      case 'note': return 'Nota';
+      case 'phone': return 'Tlf.';
+      case 'amount': return 'Monto';
+      case 'bankName': return destType === 2 ? 'Persona' : 'Banco';
+      case 'accDocument':
+      case 'accDocumente': return destType === 2 ? 'Cédula' : 'Num. Cuenta';
+      default: return key;
+    }
+  };
+
+  // NUEVO: valor mostrado para claves especiales (usar nombres en lugar de ids)
+  const valueForFundsKey = (key, v, payInfo) => {
+    if (key === 'boxId') return payInfo?.boxName || payInfo?.box || v;
+    if (key === 'bankId') return payInfo?.bankName || v;
+    return v;
+  };
+
+  // ACTUALIZADO: abrir/cerrar modal Fondos (resuelve nombre Caja/Banco y monto efectivo)
+  const openFundsModal = async (row) => {
+    const destType = destinationServiceTypeOf(row);
+    const sourceType = sourceServiceTypeOf(row);
+    const payInfo = normalizePayInfo(row);
+
+    let boxName = payInfo?.box || '';
+    if (payInfo?.boxId && !boxName) {
+      boxName = await getBoxNameById(payInfo.boxId);
+    }
+
+    let bankName = '';
+    if (payInfo?.bankId) {
+      bankName = await getBankNameById(payInfo.bankId);
+    }
+
+    const cashTotal = sourceType === 2 ? computeCashPayTotal(row) : 0;
+    const symbol = serviceCurrencySymbolOf(row);
+
+    setFundsData({
+      payInfo: { ...payInfo, boxName, bankName },
+      destinationPayInfo: normalizeDestinationPayInfo(row),
+      destType,
+      sourceType,
+      cashTotal,
+      symbol,
+    });
+    setFundsOpen(true);
+  };
+  const closeFundsModal = () => {
+    setFundsOpen(false);
+    setFundsData({ payInfo: null, destinationPayInfo: null, destType: null, sourceType: null, cashTotal: 0, symbol: '' });
   };
 
   return (
@@ -518,6 +744,8 @@ const InputTransaction = ({ clientId, clientName, createdAtFrom, createdAtTo, on
                 const willUnassign = isSelectionMode && rowGroupId === activeGroupId;
                 const isUpdating = updatingIds.has(row.id);
                 const received = isReceived(row); // NUEVO
+                // NUEVO: habilitar icono Nota solo si existe contenido
+                const hasNote = row?.note != null && String(row.note).trim() !== '';
 
                 // NUEVO: obtener nombre y descripción del servicio
                 const serviceName = row['Service.name'] ?? row.Service?.name ?? row.serviceName ?? '-';
@@ -691,14 +919,27 @@ const InputTransaction = ({ clientId, clientName, createdAtFrom, createdAtTo, on
                     {/* Acciones */}
                     <TableCell>
                       <Stack direction="row" spacing={0.5} alignItems="center">
+                        {/* NUEVO: Fondos (primero) */}
+                        <Tooltip title="Fondos" arrow>
+                          <span>
+                            <IconButton
+                              size="small"
+                              color="primary"
+                              onClick={() => openFundsModal(row)}
+                            >
+                              <AccountBalanceWalletIcon fontSize="small" />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+
                         {/* Nota */}
-                        <Tooltip title={row.note ? 'Ver nota' : 'Sin nota'} arrow>
+                        <Tooltip title={hasNote ? 'Ver nota' : 'Sin nota'} arrow>
                           <span>
                             <IconButton
                               size="small"
                               color="primary"
                               onClick={() => openNoteModal(row)}
-                              disabled={!row.note}
+                              disabled={!hasNote}
                             >
                               <NoteAltIcon fontSize="small" />
                             </IconButton>
@@ -854,6 +1095,124 @@ const InputTransaction = ({ clientId, clientName, createdAtFrom, createdAtTo, on
           {snackMsg}
         </Alert>
       </Snackbar>
+
+      {/* NUEVO: Modal Fondos */}
+      <Dialog open={fundsOpen} onClose={closeFundsModal} fullWidth maxWidth="sm">
+        <DialogTitle>Fondos</DialogTitle>
+        <DialogContent dividers>
+          {/* Header destacado: Registro de pago */}
+          <Box
+            sx={{
+              mb: 1.5,
+              p: 1.25,
+              borderRadius: 1,
+              bgcolor: 'rgba(25,118,210,0.08)',
+              border: '1px solid',
+              borderColor: 'primary.main',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+            }}
+          >
+            <AccountBalanceWalletIcon color="primary" fontSize="small" />
+            <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+              Registro de pago
+            </Typography>
+          </Box>
+
+          {/* Monto efectivo (solo si el servicio origen es Efectivo: Service.ServiceType.id == 2) */}
+          {fundsData.sourceType === 2 && Number(fundsData.cashTotal) > 0 && (
+            <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1 }}>
+              Monto: {fundsData.symbol ? `${fundsData.symbol} ` : ''}{fmtAmount(fundsData.cashTotal)}
+            </Typography>
+          )}
+
+          {/* payInfo: mostrar 'Caja' con nombre y 'Banco' con nombre */}
+          {fundsData.payInfo ? (
+            <Box sx={{ mb: 2 }}>
+              <Stack spacing={0.75}>
+                {Object.entries(fundsData.payInfo)
+                  .map(([k, v]) => [k, valueForFundsKey(k, v, fundsData.payInfo)]) // transforma valores especiales
+                  .filter(([k, v]) =>
+                    k !== 'box' && // ocultar duplicado 'box', mostramos 'Caja' desde boxId
+                    v !== null &&
+                    v !== undefined &&
+                    String(v).trim() !== ''
+                  )
+                  .map(([k, v]) => (
+                    <Typography key={k} variant="body2">
+                      {labelForFundsKey(k, fundsData.destType)}: <strong>{String(v)}</strong>
+                    </Typography>
+                  ))}
+              </Stack>
+            </Box>
+          ) : (
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Sin información de pago.
+            </Typography>
+          )}
+
+          {/* Header destacado: Destino de fondos */}
+          <Box
+            sx={{
+              mb: 1.5,
+              p: 1.25,
+              borderRadius: 1,
+              bgcolor: 'rgba(156,39,176,0.08)',
+              border: '1px solid',
+              borderColor: 'secondary.main',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+            }}
+          >
+            <PaidIcon color="secondary" fontSize="small" />
+            <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+              Destino de fondos
+            </Typography>
+          </Box>
+
+          {/* destinationPayInfo (sin cambios en valores, pero respeta etiquetas) */}
+          {fundsData.destinationPayInfo ? (
+            <Box>
+              <Stack spacing={0.75} sx={{ mb: 1 }}>
+                {Object.entries({
+                  note: fundsData.destinationPayInfo.note,
+                  type: fundsData.destinationPayInfo.type,
+                })
+                  .filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== '')
+                  .map(([k, v]) => (
+                    <Typography key={k} variant="body2">
+                      {labelForFundsKey(k, fundsData.destType)}: <strong>{String(v)}</strong>
+                    </Typography>
+                  ))}
+              </Stack>
+              {Array.isArray(fundsData.destinationPayInfo.items) && fundsData.destinationPayInfo.items.length > 0 ? (
+                <Stack spacing={1}>
+                  {fundsData.destinationPayInfo.items.map((it, idx) => (
+                    <Paper key={idx} variant="outlined" sx={{ p: 1 }}>
+                      {Object.entries(it)
+                        .filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== '')
+                        .map(([k, v]) => (
+                          <Typography key={k} variant="body2">
+                            {labelForFundsKey(k, fundsData.destType)}: <strong>{String(v)}</strong>
+                          </Typography>
+                        ))}
+                    </Paper>
+                  ))}
+                </Stack>
+              ) : (
+                <Typography variant="body2" color="text.secondary">Sin items destino.</Typography>
+              )}
+            </Box>
+          ) : (
+            <Typography variant="body2" color="text.secondary">Sin destino de fondos.</Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeFundsModal}>Cerrar</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
