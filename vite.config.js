@@ -13,6 +13,7 @@ export default defineConfig(({ mode }) => {
       'esw.truo.co',   // Servidor de desarrollo upperdata
       'localhost',     // Servidor local
       'wa.cambioslafuentelg.com', // Servidor de produccion
+      'bk.cambioslafuentelg.com', // Servidor backend
     ],
     port, 
     strictPort: true, 
