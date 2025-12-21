@@ -461,7 +461,7 @@ const InputTransaction = ({ clientId, clientName, createdAtFrom, createdAtTo, on
     return (sendAmount * totalPct) / 100;
   };
 
-  // NUEVO: normalizar payInfo
+  // Normaliza payInfo (elimina currencyId)
   const normalizePayInfo = (row) => {
     const p = row?.payInfo ?? row?.PayInfo ?? null;
     if (!p && !row?.['payInfo.holderName']) return null;
@@ -477,7 +477,6 @@ const InputTransaction = ({ clientId, clientName, createdAtFrom, createdAtTo, on
       accountId: p?.accountId ?? '',
       countryId: p?.countryId ?? '',
       reference: p?.reference ?? p?.ref ?? '',
-      currencyId: p?.currencyId ?? '',
       holderName:
         p?.holderName ??
         p?.holder ??
@@ -624,22 +623,22 @@ const InputTransaction = ({ clientId, clientName, createdAtFrom, createdAtTo, on
     }
   };
 
-  // NUEVO: valor mostrado para claves especiales (usar nombres en lugar de ids)
+  // Valor mostrado para claves especiales (usar nombre en lugar de ids)
   const valueForFundsKey = (key, v, payInfo) => {
-    if (key === 'boxId') return payInfo?.boxName || payInfo?.box || v;
-    if (key === 'bankId') return payInfo?.bankName || v;
+    if (key === 'boxId') return payInfo?.box || v;       // Caja: muestra nombre
+    if (key === 'bankId') return payInfo?.bankName || v; // Banco: muestra nombre
     return v;
   };
 
-  // ACTUALIZADO: abrir/cerrar modal Fondos (resuelve nombre Caja/Banco y monto efectivo)
+  // ACTUALIZADO: abrir/cerrar modal Fondos (resuelve nombre de Caja y Banco; sin boxName)
   const openFundsModal = async (row) => {
     const destType = destinationServiceTypeOf(row);
     const sourceType = sourceServiceTypeOf(row);
     const payInfo = normalizePayInfo(row);
 
-    let boxName = payInfo?.box || '';
-    if (payInfo?.boxId && !boxName) {
-      boxName = await getBoxNameById(payInfo.boxId);
+    let resolvedBox = payInfo?.box || '';
+    if (payInfo?.boxId && !resolvedBox) {
+      resolvedBox = await getBoxNameById(payInfo.boxId);
     }
 
     let bankName = '';
@@ -651,7 +650,7 @@ const InputTransaction = ({ clientId, clientName, createdAtFrom, createdAtTo, on
     const symbol = serviceCurrencySymbolOf(row);
 
     setFundsData({
-      payInfo: { ...payInfo, boxName, bankName },
+      payInfo: { ...payInfo, box: resolvedBox || payInfo.box, bankName }, // deja "Caja" usando 'box'
       destinationPayInfo: normalizeDestinationPayInfo(row),
       destType,
       sourceType,
@@ -1132,9 +1131,9 @@ const InputTransaction = ({ clientId, clientName, createdAtFrom, createdAtTo, on
             <Box sx={{ mb: 2 }}>
               <Stack spacing={0.75}>
                 {Object.entries(fundsData.payInfo)
-                  .map(([k, v]) => [k, valueForFundsKey(k, v, fundsData.payInfo)]) // transforma valores especiales
+                  .map(([k, v]) => [k, valueForFundsKey(k, v, fundsData.payInfo)])
                   .filter(([k, v]) =>
-                    k !== 'box' && // ocultar duplicado 'box', mostramos 'Caja' desde boxId
+                    k !== 'box' && // ocultar 'box' (ya se muestra como "Caja" en boxId)
                     v !== null &&
                     v !== undefined &&
                     String(v).trim() !== ''
