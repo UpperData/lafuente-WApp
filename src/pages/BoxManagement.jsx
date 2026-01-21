@@ -8,6 +8,8 @@ import MenuItem from '@mui/material/MenuItem';
 import Button from '@mui/material/Button';
 import axios from '../api/configAxios';
 import BoxList from '../components/BoxList';
+import Chip from '@mui/material/Chip';
+import Breadcrumbs from '@mui/material/Breadcrumbs'; 
 
 const initialFilters = {
   currencyId: '',
@@ -18,7 +20,7 @@ const initialFilters = {
 const BoxManagement = () => {
   const [filters, setFilters] = useState(initialFilters);
   const [currencies, setCurrencies] = useState([]);
-
+  const parentMenuLabel = 'Master';
   useEffect(() => {
     const fetchCurrencies = async () => {
       try {
@@ -43,6 +45,12 @@ const BoxManagement = () => {
   return (
     <Box>
       <Paper sx={{ p: 2, mb: 2 }}>
+        <Stack spacing={0.5} mb={1}>          
+          <Breadcrumbs separator="›" aria-label="breadcrumb">
+            <Chip size="small" color="secondary" variant="outlined" label={parentMenuLabel} />
+            <Chip size="small" color="primary" variant="outlined" label="Cajas" />
+          </Breadcrumbs>
+        </Stack>
         <Typography variant="h6" mb={2}>Gestión de Cajas</Typography>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="center">
           <TextField

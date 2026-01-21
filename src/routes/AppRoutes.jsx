@@ -1,4 +1,4 @@
-import React from 'react';
+import React,{lazy,Suspense} from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Home from '../pages/Home';
 import Dashboard from '../pages/Dashboard';
@@ -12,6 +12,9 @@ import OutputTransactionManagement from '../pages/OutputTransactionManagement';
 import AccountUserManagement from '../pages/AccountUserManagement';
 import  ProfileAccountUser from '../components/ProfileAccountUser';
 import About from '../components/About';
+import ExchangeManagement from '../pages/ExchangeManagement';
+import PaymentsAnalytic from '../pages/analytic/PaymentsAnalytic';
+import DebtorBank from '../pages/analytic/DebtorBank';
 
 // Utilidades locales para validar token (sin verificar firma)
 const decodeJwt = (token) => {
@@ -54,6 +57,17 @@ const AppRoutes = () => (
           <RequireAuth>
             <Layout>
               <Dashboard />
+            </Layout>
+          </RequireAuth>
+        }
+      />
+      {/* Master */}
+      <Route
+        path="/currency/value"
+        element={
+          <RequireAuth>
+            <Layout>
+              <ExchangeManagement />
             </Layout>
           </RequireAuth>
         }
@@ -141,6 +155,28 @@ const AppRoutes = () => (
           </RequireAuth>
         }
       />
+      {/* Analytic */}
+      <Route
+        path="/analytics/pending/pay"
+        element={
+          <RequireAuth>
+            <Layout>
+              <PaymentsAnalytic />
+            </Layout>
+          </RequireAuth>
+        }
+      />  
+      <Route
+        path="/analytics/debtor/bank"
+        element={
+          <RequireAuth>
+            <Layout>
+              <DebtorBank />
+            </Layout>
+          </RequireAuth>
+        }
+      />
+      {/* Ruta para página no encontrada */}
       <Route
         path="*"
         element={

@@ -21,6 +21,7 @@ import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
 import TextField from '@mui/material/TextField';
+import Autocomplete from '@mui/material/Autocomplete';
 import IconButton from '@mui/material/IconButton';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import AddIcon from '@mui/icons-material/Add';
@@ -35,6 +36,7 @@ import ListItemText from '@mui/material/ListItemText';
 import Divider from '@mui/material/Divider';
 import InputAdornment from '@mui/material/InputAdornment';
 import LinearProgress from '@mui/material/LinearProgress';
+import TablePagination from '@mui/material/TablePagination';
 
 
 const columns = [
@@ -70,6 +72,8 @@ const AccountList = ({ accounts: filteredAccounts, onAccountsLoaded, filterMode,
   // useState hooks deben ir antes de cualquier uso de variables
   const [form, setForm] = useState(emptyAccount);
   const [accounts, setAccounts] = useState([]);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
   const [loading, setLoading] = useState(false);
   const [openDialog, setOpenDialog] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -135,14 +139,33 @@ const AccountList = ({ accounts: filteredAccounts, onAccountsLoaded, filterMode,
   // Filtrado local según props
   const getFilteredAccounts = () => {
     // Si filterMode, usar la lista filtrada por props
-    if (filterMode) return filteredAccounts || [];
-    // Si no, usar el estado interno
-    let list = accounts;
-    if (countryId) list = list.filter(acc => String(acc['Bank.Country.id']) === String(countryId));
-    if (currencyId) list = list.filter(acc => String(acc['Currency.id']) === String(currencyId));
-    if (bankId) list = list.filter(acc => String(acc['Bank.id']) === String(bankId));
-    if (holder) list = list.filter(acc => acc.holderName?.toLowerCase().includes(holder.toLowerCase()));
-    return list;
+    let list = filterMode ? (filteredAccounts || []) : accounts;
+    // filtros adicionales
+    if (!filterMode) {
+      if (countryId) list = list.filter(acc => String(acc['Bank.Country.id']) === String(countryId));
+      if (currencyId) list = list.filter(acc => String(acc['Currency.id']) === String(currencyId));
+      if (bankId) list = list.filter(acc => String(acc['Bank.id']) === String(bankId));
+      if (holder) list = list.filter(acc => acc.holderName?.toLowerCase().includes(holder.toLowerCase()));
+    } else {
+      if (countryId) list = list.filter(acc => String(acc['Bank.Country.id']) === String(countryId));
+      if (currencyId) list = list.filter(acc => String(acc['Currency.id']) === String(currencyId));
+      if (bankId) list = list.filter(acc => String(acc['Bank.id']) === String(bankId));
+      if (holder) list = list.filter(acc => acc.holderName?.toLowerCase().includes(holder.toLowerCase()));
+    }
+
+    // Ordenar: estatus (activa primero) y fecha creación (más reciente primero)
+    const sorted = Array.isArray(list)
+      ? [...list].sort((a, b) => {
+          const aActive = a?.isActived ? 1 : 0;
+          const bActive = b?.isActived ? 1 : 0;
+          if (aActive !== bActive) return bActive - aActive; // activos primero
+          const aDate = a?.createdAt ? new Date(a.createdAt).getTime() : (a?.created_at ? new Date(a.created_at).getTime() : 0);
+          const bDate = b?.createdAt ? new Date(b.createdAt).getTime() : (b?.created_at ? new Date(b.created_at).getTime() : 0);
+          return bDate - aDate; // más recientes primero
+        })
+      : [];
+
+    return sorted;
   };
 
   useEffect(() => {
@@ -343,50 +366,67 @@ const AccountList = ({ accounts: filteredAccounts, onAccountsLoaded, filterMode,
                 </TableCell>
               </TableRow>
             ) : (
-              getFilteredAccounts().map((acc, idx) => (
-                <TableRow
-                  key={acc.id || acc.accountNumber}
-                  sx={(theme) => ({
-                    backgroundColor: idx % 2 === 0 ? 'inherit' : theme.palette.action.hover
-                  })}
-                >
-                  {columns.map((col) => {
-                    if (col.id === 'commission') {
+              (() => {
+                const all = getFilteredAccounts();
+                const paginated = all.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
+                return paginated.map((acc, idx) => (
+                  <TableRow
+                    key={acc.id || acc.accountNumber}
+                    sx={(theme) => ({
+                      backgroundColor: idx % 2 === 0 ? 'inherit' : theme.palette.action.hover
+                    })}
+                  >
+                    {columns.map((col) => {
+                      if (col.id === 'commission') {
+                        return (
+                          <TableCell key={col.id}>
+                            {commissionLoading[acc.id] ? (
+                              <CircularProgress size={18} />
+                            ) : commissionMap[acc.id] !== undefined && commissionMap[acc.id] !== null ? (
+                              `${commissionMap[acc.id]}%`
+                            ) : (
+                              '-'
+                            )}
+                          </TableCell>
+                        );
+                      }
                       return (
                         <TableCell key={col.id}>
-                          {commissionLoading[acc.id] ? (
-                            <CircularProgress size={18} />
-                          ) : commissionMap[acc.id] !== undefined && commissionMap[acc.id] !== null ? (
-                            `${commissionMap[acc.id]}%`
-                          ) : (
-                            '-'
-                          )}
+                          {col.render ? col.render(acc) : acc[col.id]}
                         </TableCell>
                       );
-                    }
-                    return (
-                      <TableCell key={col.id}>
-                        {col.render ? col.render(acc) : acc[col.id]}
-                      </TableCell>
-                    );
-                  })}
-                  <TableCell>
-                    <IconButton color="primary" onClick={() => handleOpenDialog(acc, acc.id)} title="Modificar" disabled={loading}>
-                      <EditIcon />
-                    </IconButton>
-                    <IconButton color="secondary" title="Movimientos" disabled={loading}>
-                      <ListAltIcon />
-                    </IconButton>
-                    <IconButton color="info" onClick={() => handleOpenHistory(acc)} title="Historia de comisiones" disabled={loading}>
-                      <HistoryIcon />
-                    </IconButton>
-                  </TableCell>
-                </TableRow>
-              ))
+                    })}
+                    <TableCell>
+                      <IconButton color="primary" onClick={() => handleOpenDialog(acc, acc.id)} title="Modificar" disabled={loading}>
+                        <EditIcon />
+                      </IconButton>
+                      <IconButton color="secondary" title="Movimientos" disabled={loading}>
+                        <ListAltIcon />
+                      </IconButton>
+                      <IconButton color="info" onClick={() => handleOpenHistory(acc)} title="Historia de comisiones" disabled={loading}>
+                        <HistoryIcon />
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+                ));
+              })()
             )}
           </TableBody>
         </Table>
       </TableContainer>
+
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1 }}>
+        <TablePagination
+          component="div"
+          count={getFilteredAccounts().length}
+          page={page}
+          onPageChange={(_, newPage) => setPage(newPage)}
+          rowsPerPage={rowsPerPage}
+          onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10)); setPage(0); }}
+          rowsPerPageOptions={[5, 10, 25, 50]}
+          labelRowsPerPage="Filas por página"
+        />
+      </Box>
 
       {/* Modal crear/editar */}
       <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
@@ -399,48 +439,36 @@ const AccountList = ({ accounts: filteredAccounts, onAccountsLoaded, filterMode,
           {(saving || commissionDialogLoading) && <LinearProgress sx={{ mb: 2 }} />}
           <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 3, mt: 1 }}>
             <Stack spacing={2} sx={{ flex: 1, minWidth: 260 }}>
-              <TextField
-                select
-                label="País"
-                name="countryId"
-                value={form.countryId}
-                onChange={handleChange}
+              <Autocomplete
+                options={countries || []}
+                getOptionLabel={(o) => (o?.name ?? '')}
+                value={countries.find(c => String(c.id) === String(form.countryId)) || null}
+                onChange={(_, v) => setForm(prev => ({ ...prev, countryId: v ? String(v.id) : '' }))}
+                disableClearable={false}
                 fullWidth
                 disabled={saving}
-              >
-                <MenuItem value="">Seleccione país</MenuItem>
-                {countries.map((c) => (
-                  <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
-                ))}
-              </TextField>
-              <TextField
-                select
-                label="Moneda"
-                name="currencyId"
-                value={form.currencyId}
-                onChange={handleChange}
+                renderInput={(params) => <TextField {...params} label="País" />}
+              />
+              <Autocomplete
+                options={currencies || []}
+                getOptionLabel={(o) => (o?.name ?? o?.symbol ?? '')}
+                value={currencies.find(c => String(c.id) === String(form.currencyId)) || null}
+                onChange={(_, v) => setForm(prev => ({ ...prev, currencyId: v ? String(v.id) : '' }))}
+                disableClearable={false}
                 fullWidth
                 disabled={saving}
-              >
-                <MenuItem value="">Seleccione moneda</MenuItem>
-                {currencies.map((c) => (
-                  <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
-                ))}
-              </TextField>
-              <TextField
-                select
-                label="Banco"
-                name="bankId"
-                value={form.bankId}
-                onChange={handleChange}
+                renderInput={(params) => <TextField {...params} label="Moneda" />}
+              />
+              <Autocomplete
+                options={banks || []}
+                getOptionLabel={(o) => (o?.name ?? '')}
+                value={banks.find(b => String(b.id) === String(form.bankId)) || null}
+                onChange={(_, v) => setForm(prev => ({ ...prev, bankId: v ? String(v.id) : '' }))}
+                disableClearable={false}
                 fullWidth
                 disabled={saving}
-              >
-                <MenuItem value="">Seleccione banco</MenuItem>
-                {banks.map((b) => (
-                  <MenuItem key={b.id} value={b.id}>{b.name}</MenuItem>
-                ))}
-              </TextField>
+                renderInput={(params) => <TextField {...params} label="Banco" />}
+              />
               <TextField
                 label="% Comisión"
                 name="commission"

@@ -17,7 +17,10 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
 import Grid from '@mui/material/Grid';
 import FormControlLabel from '@mui/material/FormControlLabel';
-import Switch from '@mui/material/Switch';
+import Radio from '@mui/material/Radio';
+import RadioGroup from '@mui/material/RadioGroup';
+import FormControl from '@mui/material/FormControl';
+import FormLabel from '@mui/material/FormLabel';
 import LinearProgress from '@mui/material/LinearProgress';
 import CircularProgress from '@mui/material/CircularProgress';
 import axios from '../api/configAxios';
@@ -75,9 +78,12 @@ const ClientCompact = ({
       const params = { isActived: true, ...queryParams };
       const res = await axios.get('/clients/list', { params, headers });
       const list = res.data?.rs ?? res.data ?? [];
-      setClients(Array.isArray(list) ? list : []);
+      const normalized = Array.isArray(list) ? list : [];
+      setClients(normalized);
+      return normalized; // <-- devolver lista para uso posterior
     } catch {
       setClients([]);
+      return [];
     } finally {
       setLoading(false);
     }
@@ -174,7 +180,29 @@ const ClientCompact = ({
         };
         await axios.post('/clients/create', payload, { headers });
       }
-      await loadClients();
+
+      // Recargar lista y seleccionar el cliente actualizado/creado
+      const fresh = await loadClients();
+      let found = null;
+      if (editMode && form.id !== undefined && form.id !== null) {
+        found = fresh.find((c) => String(c.id) === String(form.id));
+      }
+      if (!found) {
+        // fallback por docId (+ nombre parcial)
+        found = fresh.find(
+          (c) =>
+            String(c.docId ?? '') === String(form.docId ?? '') ||
+            (
+              String(c.firstName ?? '').toLowerCase() === String(form.firstName ?? '').toLowerCase() &&
+              String(c.lastName ?? '').toLowerCase() === String(form.lastName ?? '').toLowerCase()
+            )
+        );
+      }
+      if (found) {
+        setValue(found);
+        if (onChange) onChange(found);
+      }
+
       handleCloseEdit();
     } catch {
       // manejar error si es necesario
@@ -320,13 +348,30 @@ const ClientCompact = ({
               />
             </Grid>
             <Grid item xs={12} sm={6}>
-              <FormControlLabel
-                control={<Switch checked={form.isFemale} onChange={handleToggle('isFemale')} />}
-                label={form.isFemale ? 'Mujer' : 'Hombre'}
-              />
+              <FormControl component="fieldset" fullWidth>
+                <FormLabel component="legend" sx={{ mb: 0.5 }}>Género</FormLabel>
+                <RadioGroup
+                  row
+                  value={form.isFemale ? 'female' : 'male'}
+                  onChange={(e) => setForm((prev) => ({ ...prev, isFemale: e.target.value === 'female' }))}
+                >
+                  <FormControlLabel value="male" control={<Radio />} label="Hombre" />
+                  <FormControlLabel value="female" control={<Radio />} label="Mujer" />
+                </RadioGroup>
+              </FormControl>
             </Grid>
             <Grid item xs={12} sm={6}>
-              <FormControlLabel control={<Switch checked={form.isNational} onChange={handleToggle('isNational')} />} label="Nacional" />
+              <FormControl component="fieldset" fullWidth>
+                <FormLabel component="legend" sx={{ mb: 0.5 }}>Nacionalidad</FormLabel>
+                <RadioGroup
+                  row
+                  value={form.isNational ? 'national' : 'foreign'}
+                  onChange={(e) => setForm((prev) => ({ ...prev, isNational: e.target.value === 'national' }))}
+                >
+                  <FormControlLabel value="national" control={<Radio />} label="Nacional" />
+                  <FormControlLabel value="foreign" control={<Radio />} label="Extranjero" />
+                </RadioGroup>
+              </FormControl>
             </Grid>
           </Grid>
         </DialogContent>

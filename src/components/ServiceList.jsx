@@ -36,6 +36,8 @@ import TodayIcon from '@mui/icons-material/Today';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
 import DialogContentText from '@mui/material/DialogContentText';
+import Switch from '@mui/material/Switch';
+import FormControlLabel from '@mui/material/FormControlLabel';
 
 const emptyService = {
   serviceTypeId: '',
@@ -46,6 +48,7 @@ const emptyService = {
   commission: 0,
   description: '',
   isActived: true,
+  exchangeRateMode: false,
 };
 
 const ServiceList = ({ serviceTypeId, name, currencyId, currencyDestinationId, serviceTypeDestinationId }) => {
@@ -66,13 +69,16 @@ const ServiceList = ({ serviceTypeId, name, currencyId, currencyDestinationId, s
   const [openDailyModal, setOpenDailyModal] = useState(false);
   const [dailyRows, setDailyRows] = useState([{ days: '', commission: '' }]);
   const [dailyCommissions, setDailyCommissions] = useState([]); // [{days:number, commission:number}]
-
   const [openHistory, setOpenHistory] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyData, setHistoryData] = useState([]);
   const [historyServiceName, setHistoryServiceName] = useState('');
 
   const [dailyPctDialog, setDailyPctDialog] = useState({ open: false, data: null, serviceName: '' });
+
+  // id de la comisión activa (CommissionServices id) para updateDailyCommission
+  const [selectedCommissionId, setSelectedCommissionId] = useState(null);
+  const [dailySaving, setDailySaving] = useState(false);
 
   const fetchServiceTypes = async () => {
     try {
@@ -99,6 +105,7 @@ const ServiceList = ({ serviceTypeId, name, currencyId, currencyDestinationId, s
       const token = localStorage.getItem('token');
       const res = await axios.get('/services/getAll', { headers: { Authorization: `Bearer ${token}` } });
       const list = res.data.rs || res.data || [];
+      
       setServices(list);
       // Al refrescar, limpiar comisiones para volver a consultarlas
       setCommissionMap({});
@@ -118,8 +125,43 @@ const ServiceList = ({ serviceTypeId, name, currencyId, currencyDestinationId, s
     // eslint-disable-next-line
   }, []);
 
+  // Normaliza el campo dailyPercentage (puede venir string JSON, array u object)
+  // devuelve array [{ days: number, commission: number }] o []
+  const parseDailyPercentage = (raw) => {
+    if (!raw && raw !== 0) return [];
+    let parsed = raw;
+    if (typeof raw === 'string' && raw.trim().length > 0) {
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        parsed = raw;
+      }
+    }
+    const toNumber = (v) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : 0;
+    };
+
+    if (Array.isArray(parsed)) {
+      return parsed.map((r) => ({
+        days: toNumber(r.waitingDays ?? r.waiting_days ?? r.wait ?? 0),
+        commission: toNumber(r.additional ?? r.adicional ?? r.adicionalidad ?? r.additionalPercentage ?? 0),
+      }));
+    }
+    if (parsed && typeof parsed === 'object') {
+      return [
+        {
+          days: toNumber(parsed.waitingDays ?? parsed.waiting_days ?? parsed.wait ?? 0),
+          commission: toNumber(parsed.additional ?? parsed.adicional ?? parsed.adicionalidad ?? parsed.additionalPercentage ?? 0),
+        },
+      ];
+    }
+    return [];
+  };
+
   const handleOpenDialog = (service = null) => {
     if (service) {
+      
       setForm({
         serviceTypeId: service['ServiceType.id'] || service.serviceTypeId || '',
         currencyId: service['currency.id'] || service.currencyId || '',
@@ -129,10 +171,11 @@ const ServiceList = ({ serviceTypeId, name, currencyId, currencyDestinationId, s
         commission: service.commission !== undefined ? Number(service.commission) : 0,
         description: service.description || '',
         isActived: service.isActived !== undefined ? service.isActived : true,
+        exchangeRateMode: service['exchangeRateMode'] ?? service.exchangeRateMode ?? false,
       });
       setSelectedId(service.id);
       setEditMode(true);
-      // Cargar comisión activa al abrir modal de edición
+      // Cargar comisión activa y reglas diarias al abrir modal de edición
       setCommissionDialogLoading(true);
       const token = localStorage.getItem('token');
       axios.get('/services/getCommissions', {
@@ -142,11 +185,43 @@ const ServiceList = ({ serviceTypeId, name, currencyId, currencyDestinationId, s
       .then(res => {
         const data = res.data?.rs ?? res.data ?? [];
         const latest = selectLatestCommission(data);
+        // guardar id del registro de comisión activo para usar en updateDailyCommission
+        setSelectedCommissionId(latest?.id ?? latest?.CommissionServicesId ?? null);
         if (latest?.commission !== undefined) {
           setForm(prev => ({ ...prev, commission: Number(latest.commission) }));
         }
+
+        // Obtener dailyPercentage desde el registro más reciente o desde el propio servicio (fallback)
+        let rawDaily =
+          latest?.dailyPercentage ??
+          latest?.dailyPct ??
+          latest?.CommissionServices?.dailyPercentage ??
+          latest?.['CommissionServices.dailyPercentage'] ??
+          null;
+
+        if (!rawDaily) {
+          rawDaily =
+            service['CommissionServices.dailyPercentage'] ??
+            service?.CommissionServices?.dailyPercentage ??
+            service?.dailyPercentage ??
+            null;
+        }
+
+        const normalized = parseDailyPercentage(rawDaily); // [{days, commission}, ...]
+
+        setDailyCommissions(normalized);
+        setDailyRows(
+          normalized.length > 0
+            ? normalized.map((r) => ({ days: String(r.days ?? ''), commission: String(r.commission ?? '') }))
+            : [{ days: '', commission: '' }]
+        );
       })
-      .catch(() => { /* opcional: manejar error */ })
+      .catch(() => {
+        // fallback: limpiar reglas si ocurre error
+        setSelectedCommissionId(null);
+        setDailyCommissions([]);
+        setDailyRows([{ days: '', commission: '' }]);
+      })
       .finally(() => setCommissionDialogLoading(false));
     } else {
       setForm(emptyService);
@@ -186,13 +261,36 @@ const ServiceList = ({ serviceTypeId, name, currencyId, currencyDestinationId, s
     setDailyRows((rows) => (rows.length > 1 ? rows.filter((_, i) => i !== idx) : rows));
   const updateDailyRow = (idx, key, value) =>
     setDailyRows((rows) => rows.map((r, i) => (i === idx ? { ...r, [key]: value } : r)));
-  const saveDailyRows = () => {
-    // Normalizar/validar y guardar en estado principal
+  const saveDailyRows = async () => {
+    // Normalizar/validar filas
     const normalized = dailyRows
-      .map(r => ({ days: Number(r.days), commission: Number(r.commission) }))
-      .filter(r => Number.isFinite(r.days) && r.days > 0 && Number.isFinite(r.commission) && r.commission >= 0);
-    setDailyCommissions(normalized);
-    setOpenDailyModal(false);
+      .map((r) => ({ waitingDays: Number(r.days), additional: String(Number(r.commission)) }))
+      .filter((r) => Number.isFinite(r.waitingDays) && r.waitingDays > 0 && r.additional !== '' && !Number.isNaN(Number(r.additional)));
+
+    // payload esperado: { dailyPercentage: [], CommissionServicesId: 14 }
+    const payload = {
+      dailyPercentage: normalized,
+      CommissionServicesId: selectedCommissionId,
+    };
+
+    setDailySaving(true);
+    try {
+      const token = localStorage.getItem('token');
+      await axios.put('/services/updateDailyCommission', payload, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      // actualizar estado local y cerrar modal
+      setDailyCommissions(normalized.map((r) => ({ days: r.waitingDays, commission: Number(r.additional) })));
+      setDailyRows(normalized.length ? normalized.map((r) => ({ days: String(r.waitingDays), commission: String(Number(r.additional)) })) : [{ days: '', commission: '' }]);
+      setOpenDailyModal(false);
+      // refrescar comisión del servicio en la lista (si hay servicio seleccionado)
+      if (selectedId) fetchCommission(selectedId);
+    } catch (err) {
+      // opcional: mostrar error (se mantiene simple)
+      console.error('Error actualizando comisión diaria', err);
+    } finally {
+      setDailySaving(false);
+    }
   };
 
   const handleSubmit = async () => {
@@ -208,6 +306,7 @@ const ServiceList = ({ serviceTypeId, name, currencyId, currencyDestinationId, s
         commission: Number(form.commission),
         description: form.description,
         isActived: !!form.isActived,
+        exchangeRateMode: !!form.exchangeRateMode,
         // Adjunta las reglas diarias si el backend las soporta
         ...(dailyCommissions.length > 0 ? { dailyCommissions } : {}),
       };
@@ -320,24 +419,96 @@ const ServiceList = ({ serviceTypeId, name, currencyId, currencyDestinationId, s
     return list;
   }, [services, serviceTypeId, currencyId, currencyDestinationId, serviceTypeDestinationId, name]);
 
-  const openDailyPercentage = (service) => {
-    const raw =
-      service['CommissionServices.dailyPercentage'] ??
-      service?.CommissionServices?.dailyPercentage ??
-      null;
-    let parsed = raw;
-    if (typeof raw === 'string') {
-      try {
-        parsed = JSON.parse(raw);
-      } catch {
-        parsed = raw; // mantener string si no es JSON
-      }
-    }
+  const openDailyPercentage = async (service) => {
+    // Abrir diálogo inmediatamente (mostrar cargando si es necesario)
     setDailyPctDialog({
       open: true,
-      data: parsed,
+      data: null,
       serviceName: service.name || '',
     });
+
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.get('/services/getCommissions', {
+        params: { serviceId: service.id, isActived: true },
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const list = res.data?.rs ?? res.data ?? [];
+      const latest = selectLatestCommission(list);
+
+      // Extraer campo que contiene la comisión diaria (puede venir con distintos nombres)
+      let raw =
+        latest?.dailyPercentage ??
+        latest?.dailyPct ??
+        latest?.CommissionServices?.dailyPercentage ??
+        latest?.['CommissionServices.dailyPercentage'] ??
+        null;
+
+      // Si no viene en el último registro, intentar usar el propio service (fallback)
+      if (!raw) {
+        raw =
+          service['CommissionServices.dailyPercentage'] ??
+          service?.CommissionServices?.dailyPercentage ??
+          null;
+      }
+
+      // Parsear si viene como string JSON
+      let parsed = raw;
+      if (typeof raw === 'string' && raw.trim().length > 0) {
+        try {
+          parsed = JSON.parse(raw);
+        } catch {
+          // mantener string si no es JSON
+          parsed = raw;
+        }
+      }
+
+      // Normalizar a array de objetos con keys { waitingDays, additional }
+      let normalized = null;
+      if (Array.isArray(parsed)) {
+        normalized = parsed.map((r) => ({
+          waitingDays: Number(r.waitingDays ?? r.waiting_days ?? r.wait ?? 0),
+          additional:
+            r.additional !== undefined
+              ? Number(r.additional)
+              : r.adicional !== undefined
+              ? Number(r.adicional)
+              : r.adicionalidad !== undefined
+              ? Number(r.adicionalidad)
+              : NaN,
+        }));
+      } else if (parsed && typeof parsed === 'object') {
+        normalized = [
+          {
+            waitingDays: Number(parsed.waitingDays ?? parsed.waiting_days ?? parsed.wait ?? 0),
+            additional:
+              parsed.additional !== undefined
+                ? Number(parsed.additional)
+                : parsed.adicional !== undefined
+                ? Number(parsed.adicional)
+                : parsed.adicionalidad !== undefined
+                ? Number(parsed.adicionalidad)
+                : NaN,
+          },
+        ];
+      } else {
+        // si no es objeto/array, mantener el valor crudo
+        normalized = parsed;
+      }
+
+      setDailyPctDialog({
+        open: true,
+        data: normalized,
+        serviceName: service.name || '',
+      });
+    } catch (err) {
+      // en caso de error mostrar sin información
+      setDailyPctDialog({
+        open: true,
+        data: null,
+        serviceName: service.name || '',
+      });
+    }
   };
   const closeDailyPercentage = () =>
     setDailyPctDialog({ open: false, data: null, serviceName: '' });
@@ -371,6 +542,7 @@ const ServiceList = ({ serviceTypeId, name, currencyId, currencyDestinationId, s
               <TableCell>Cliente recibe</TableCell>
               <TableCell>Cliente paga</TableCell>
               <TableCell>Comisión diaria</TableCell>
+              <TableCell>Modo</TableCell>
               <TableCell>Nombre servicio</TableCell>
               <TableCell>Status</TableCell>
               <TableCell>Acciones</TableCell>
@@ -379,13 +551,13 @@ const ServiceList = ({ serviceTypeId, name, currencyId, currencyDestinationId, s
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={6} align="center" sx={{ py: 6 }}>
+                <TableCell colSpan={8} align="center" sx={{ py: 6 }}>
                   <CircularProgress />
                 </TableCell>
               </TableRow>
             ) : filteredServices.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} align="center" sx={{ py: 4 }}>
+                <TableCell colSpan={8} align="center" sx={{ py: 4 }}>
                   Sin resultados
                 </TableCell>
               </TableRow>
@@ -450,6 +622,14 @@ const ServiceList = ({ serviceTypeId, name, currencyId, currencyDestinationId, s
                     >
                       Ver diaria
                     </Button>
+                  </TableCell>
+
+                  {/* Modo */}
+                  <TableCell>
+                    {(() => {
+                      const mode = s['exchangeRateMode'] ?? s.exchangeRateMode ?? false;
+                      return mode ? 'Tipo de cambio' : 'Comisión';
+                    })()}
                   </TableCell>
 
                   {/* Nombre servicio con tooltip de descripción */}
@@ -562,6 +742,17 @@ const ServiceList = ({ serviceTypeId, name, currencyId, currencyDestinationId, s
                         </InputAdornment>
                       ) : null,
                     }}
+                  />
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={!!form.exchangeRateMode}
+                        onChange={(e) => setForm(prev => ({ ...prev, exchangeRateMode: e.target.checked }))}
+                        name="exchangeRateMode"
+                        color="primary"
+                      />
+                    }
+                    label={form.exchangeRateMode ? 'Tipo de cambio' : 'Comisión'}
                   />
                   <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
                     <Button
@@ -780,9 +971,9 @@ const ServiceList = ({ serviceTypeId, name, currencyId, currencyDestinationId, s
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={closeDaily}>Cancelar</Button>
-          <Button onClick={saveDailyRows} variant="contained">
-            Guardar
+          <Button onClick={closeDaily} disabled={dailySaving}>Cancelar</Button>
+          <Button onClick={saveDailyRows} variant="contained" disabled={dailySaving}>
+            {dailySaving ? <CircularProgress size={18} /> : 'Guardar'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -808,10 +999,10 @@ const ServiceList = ({ serviceTypeId, name, currencyId, currencyDestinationId, s
                   sx={{ p: 1.2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
                 >
                   <Typography variant="body2">
-                    Espera (días): <strong>{r.waitingDays}</strong>
+                    Espera (días): <strong>{Number.isFinite(Number(r.waitingDays)) ? Number(r.waitingDays) : '-'}</strong>
                   </Typography>
                   <Typography variant="body2">
-                    Adicional: <strong>{r.adicional}%</strong>
+                    Adicional: <strong>{Number.isFinite(Number(r.additional)) ? `${Number(r.additional)}%` : '-'}</strong>
                   </Typography>
                 </Paper>
               ))}

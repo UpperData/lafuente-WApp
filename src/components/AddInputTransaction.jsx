@@ -400,6 +400,11 @@ const AddInputTransaction = ({ open, onClose, clientId, initialData, onSaved }) 
   const [payOpen, setPayOpen] = useState(false);
   const [payInfo, setPayInfo] = useState(null);
   const [payLoading, setPayLoading] = useState(false);
+  // Autocomplete compacto de cuentas (/bank-acc/bank-accounts/compact)
+  const [compactAccountOptions, setCompactAccountOptions] = useState([]);
+  const [compactAccountInput, setCompactAccountInput] = useState('');
+  const [compactAccountLoading, setCompactAccountLoading] = useState(false);
+  const [selectedCompactAccount, setSelectedCompactAccount] = useState(null);
   // Cajas (para Registro de pago)
   const [payBoxes, setPayBoxes] = useState([]);
   const [payBoxesLoading, setPayBoxesLoading] = useState(false);
@@ -616,8 +621,38 @@ const AddInputTransaction = ({ open, onClose, clientId, initialData, onSaved }) 
     if (payOpen) loadBanks();
   }, [payCountryId, payOpen]);
 
-  // Reemplaza el efecto que carga cuentas bancarias por uno que usa bankId, currencyId y countryId
+  // Consumir /bank-acc/bank-accounts/compact para Autocomplete "Cuenta"
   useEffect(() => {
+    let active = true;
+    const q = String(compactAccountInput || '').trim();
+    if (!payOpen || !q || q.length < 2) {
+      setCompactAccountOptions([]);
+      setCompactAccountLoading(false);
+      return () => { active = false; };
+    }
+    setCompactAccountLoading(true);
+    const token = localStorage.getItem('token');
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    axios
+      .get('/bank-acc/bank-accounts/compact', { params: { q }, headers })
+      .then((res) => {
+        if (!active) return;
+        const list = res.data?.rs ?? res.data ?? [];
+        setCompactAccountOptions(Array.isArray(list) ? list : []);
+      })
+      .catch(() => {
+        if (!active) return;
+        setCompactAccountOptions([]);
+      })
+      .finally(() => {
+        if (active) setCompactAccountLoading(false);
+      });
+    return () => { active = false; };
+  }, [compactAccountInput, payOpen]);
+
+  // Cargar cuentas bancarias según selección de servicio (digital/efectivo)
+  useEffect(() => {
+    if (!payOpen) return;
     const loadAccounts = async () => {
       setAccountsLoading(true);
       const token = localStorage.getItem('token');
@@ -656,24 +691,17 @@ const AddInputTransaction = ({ open, onClose, clientId, initialData, onSaved }) 
 
   const handleSavePay = () => {
     if (isDigital) {
-      const selectedAcc = payAccounts.find((a) => String(a.id) === String(payAccountId));
-      const accountText =
-        selectedAcc?.alias ||
-        selectedAcc?.number ||
-        selectedAcc?.accountNumber ||
-        selectedAcc?.name ||
-        payAccount ||
-        '';
+      // Prefer selectedCompactAccount (from /bank-acc/bank-accounts/compact), fallback to payAccounts/pay* states
+      const acc = selectedCompactAccount || payAccounts.find((a) => String(a.id) === String(payAccountId)) || null;
       const info = {
         type: 'Electronico',
-        boxId: payBoxId || '',
-        countryId: payCountryId || '',
-        bankId: payBankId || '',
-        currencyId: payCurrencyId || '',
-        accountId: payAccountId || '',
-        account: String(accountText).trim(),
-        reference: (payReference || '').trim(),
-        holderName: (payHolderName || selectedAcc?.holderName || selectedAcc?.holder || selectedAcc?.ownerName || '').trim(),
+        bankId: String(acc?.['Bank.id'] ?? payBankId ?? ''),
+        account: String(acc?.accountNumber ?? payAccount ?? '').trim(),
+        accountId: String(acc?.id ?? payAccountId ?? '').trim(),
+        countryId: String(acc?.['Bank.Country.id'] ?? payCountryId ?? '').trim(),
+        reference: String(payReference ?? '').trim(),
+        currencyId: String(acc?.['Currency.id'] ?? payCurrencyId ?? '').trim(),
+        holderName: String(acc?.holderName ?? payHolderName ?? '').trim(),
       };
       setPayInfo(info);
     } else if (isCash) {
@@ -1245,119 +1273,62 @@ const AddInputTransaction = ({ open, onClose, clientId, initialData, onSaved }) 
 
           {isDigital && (
             <Stack spacing={2}>
-              <TextField
-                select
-                label="País"
-                value={payCountryId}
-                onChange={(e) => setPayCountryId(e.target.value)}
-              >
-                <MenuItem value="">Seleccione</MenuItem>
-                {payCountries.map((c) => (
-                  <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
-                ))}
-              </TextField>
-              <TextField
-                select
-                label="Banco"
-                value={payBankId}
-                onChange={(e) => setPayBankId(e.target.value)}
-                disabled={!payCountryId || payBanks.length === 0}
-                helperText={!payCountryId ? 'Seleccione un país' : payBanks.length === 0 ? 'Sin bancos' : ' '}
-              >
-                <MenuItem value="">Seleccione</MenuItem>
-                {payBanks.map((b) => (
-                  <MenuItem key={b.id} value={b.id}>{b.name}</MenuItem>
-                ))}
-              </TextField>
-              <TextField
-                select
-                label="Moneda"
-                value={payCurrencyId}
-                onChange={(e) => {
-                  setPayCurrencyId(e.target.value);
-                  setPayBoxId(''); // reset caja al cambiar moneda
-                }}
-              >
-                <MenuItem value="">Seleccione</MenuItem>
-                {payCurrencies.map((m) => (
-                  <MenuItem key={m.id} value={m.id}>{m.name}</MenuItem>
-                ))}
-              </TextField>
-             {/*  <TextField
-                label="Cuenta"
-                select
-                fullWidth
-                value={payBoxId}
-                onChange={(e) => setPayBoxId(e.target.value)}
-                disabled={payBoxesLoading || !payCurrencyId}
-                helperText={!payCurrencyId ? 'Seleccione moneda primero' : payBoxes.length === 0 && !payBoxesLoading ? 'Sin cajas' : ' '}
-                InputLabelProps={{ shrink: true }}
-              >
-                <MenuItem value="">Seleccione cuenta</MenuItem>
-                {payBoxes.map((b) => {
-                  const personName = [b?.person?.lastName, b?.person?.firstName].filter(Boolean).join(' ');
+              {/* Autocomplete independiente "Cuenta" (consume /bank-acc/bank-accounts/compact) */}
+              <Autocomplete
+                options={compactAccountOptions}
+                getOptionLabel={(o) =>
+                  o ? `${o.holderName ?? ''} — ${o.accountNumber ?? ''}${o['Currency.name'] ? ` (${o['Bank.name']})` : ''}` : ''
+                }
+                renderOption={(props, o) => {
+                  const tip = [o?.['Bank.name'], o?.['Bank.Country.name']].filter(Boolean).join(' — ');
                   return (
-                    <MenuItem key={b.id} value={b.id}>
-                      {b.name}{personName ? ` - ${personName}` : ''}
-                    </MenuItem>
+                    <li {...props} title={tip}>
+                      <Tooltip title={tip} placement="right">
+                        <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                          <Typography variant="body2">{o?.holderName ?? ''}</Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {`${o?.['Bank.name']} - ${o?.accountNumber ?? ''}${o?.['Currency.name'] ? ` — ${o['Currency.name']}` : ''}`}
+                          </Typography>
+                        </Box>
+                      </Tooltip>
+                    </li>
                   );
-                })}
-              </TextField> */}
-              {/* Cuenta + Titular */}
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-                <TextField
-                  select
-                  label="Cuenta bancaria"
-                  value={payAccountId}
-                  onChange={(e) => {
-                    const id = e.target.value;
-                    setPayAccountId(id);
-                    const acc = payAccounts.find((a) => String(a.id) === String(id));
-                    setPayHolderName(acc?.holderName || acc?.holder || acc?.ownerName || '');
-                  }}
-                  disabled={
-                    accountsLoading ||
-                    !payBankId ||
-                    !payCurrencyId ||
-                    !payCountryId
-                  }
-                  helperText={
-                    !payCountryId
-                      ? 'Seleccione país'
-                      : !payBankId
-                      ? 'Seleccione banco'
-                      : !payCurrencyId
-                      ? 'Seleccione moneda'
-                      : accountsLoading
-                      ? 'Cargando cuentas...'
-                      : payAccounts.length === 0
-                      ? 'Sin cuentas'
-                      : ' '
-                  }
-                  sx={{ flex: 1 }}
-                >
-                  <MenuItem value="">Seleccione</MenuItem>
-                  {payAccounts.map((acc) => (
-                    <MenuItem key={acc.id} value={acc.id}>
-                      {acc.alias ||
-                        acc.number ||
-                        acc.accountNumber ||
-                        acc.name ||
-                        `Cuenta ${acc.id}`}
-                    </MenuItem>
-                  ))}
-                </TextField>
-                <TextField
-                  label="Titular"
-                  value={payHolderName}
-                  InputProps={{ readOnly: true }}
-                  sx={{
-                    flex: 1,
-                    '& .MuiInputBase-input': { color: 'text.secondary' },
-                  }}
-                  placeholder="Nombre del titular"
-                />
-              </Stack>
+                }}
+                inputValue={compactAccountInput}
+                onInputChange={(_e, v) => setCompactAccountInput(v)}
+                onChange={(_e, val) => {
+                  const acc = val || null;
+                  setSelectedCompactAccount(acc);
+                  // actualizar estados mínimos requeridos (control independiente)
+                  setPayAccountId(acc?.id ? String(acc.id) : '');
+                  setPayAccount(acc?.accountNumber ?? '');
+                  setPayHolderName(acc?.holderName ?? '');
+                  setPayCurrencyId(acc?.['Currency.id'] ? String(acc['Currency.id']) : '');
+                  setPayBankId(acc?.['Bank.id'] ? String(acc['Bank.id']) : '');
+                  setPayCountryId(acc?.['Bank.Country.id'] ? String(acc['Bank.Country.id']) : '');
+                }}
+                isOptionEqualToValue={(o, v) => String(o?.id) === String(v?.id)}
+                loading={compactAccountLoading}
+                noOptionsText={compactAccountInput?.trim()?.length < 2 ? 'Escriba 2+ caracteres' : 'Sin resultados'}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Cuenta"
+                    placeholder="Buscar titular o número (2+ caracteres)"
+                    InputProps={{
+                      ...params.InputProps,
+                      endAdornment: (
+                        <>
+                          {compactAccountLoading ? <CircularProgress size={18} /> : null}
+                          {params.InputProps.endAdornment}
+                        </>
+                      ),
+                    }}
+                    fullWidth
+                  />
+                )}
+              />
+
               <TextField
                 label="Referencia"
                 value={payReference}

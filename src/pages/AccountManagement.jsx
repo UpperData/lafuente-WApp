@@ -89,8 +89,7 @@ const AccountManagement = () => {
   return (
     <Box>
       <Paper sx={{ p: 2, mb: 2 }}>
-        <Stack spacing={0.5} mb={1}>
-          <Typography variant="caption" color="text.secondary">Ubicación</Typography>
+        <Stack spacing={0.5} mb={1}>          
           <Breadcrumbs separator="›" aria-label="breadcrumb">
             <Chip size="small" color="secondary" variant="outlined" label={parentMenuLabel} />
             <Chip size="small" color="primary" variant="outlined" label="Cuentas bancarias" />
