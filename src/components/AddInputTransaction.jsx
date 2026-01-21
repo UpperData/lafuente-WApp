@@ -465,8 +465,12 @@ const AddInputTransaction = ({ open, onClose, clientId, initialData, onSaved }) 
       // Prefill from existing payInfo (only in edit mode)
       const existing = editMode ? getInitialPayInfo() : null;
       if (existing && typeof existing === 'object') {
-        if (existing.type === 'digital' && isDigital) {
-          // Set base IDs first so dependent effects run
+        const t = String(existing.type || '').toLowerCase();
+        const existingIsDigital = t.includes('electron') || t.includes('digit') || t === 'digital' || t === 'electronico';
+        const existingIsCash = t.includes('efect') || t === 'cash' || t === 'efectivo';
+
+        if (existingIsDigital && isDigital) {
+          // Basic fields
           setPayCountryId(String(existing.countryId || ''));
           setPayBankId(String(existing.bankId || ''));
           setPayCurrencyId(String(existing.currencyId || ''));
@@ -474,10 +478,36 @@ const AddInputTransaction = ({ open, onClose, clientId, initialData, onSaved }) 
           setPayAccountId(String(existing.accountId || ''));
           setPayAccount(String(existing.account || ''));
           setPayHolderName(String(existing.holderName || ''));
-          // Optional: caja asociada para digital (si la guardas)
           setPayBoxId(String(existing.boxId || ''));
 
-          // Load banks for prefilled country
+          // If we have accountId/account/holderName from payInfo, create a minimal selectedCompactAccount
+          if (existing.accountId || existing.account || existing.holderName) {
+            // try to resolve currency name from loaded currencies
+            const currencyList = currenciesRes.data?.rs ?? currenciesRes.data ?? [];
+            const curObj = Array.isArray(currencyList)
+              ? currencyList.find((c) => String(c.id) === String(existing.currencyId))
+              : null;
+            const compactAcc = {
+              id: existing.accountId ?? existing.accountId,
+              accountNumber: existing.account ?? existing.account,
+              holderName: existing.holderName ?? '',
+              'Bank.id': existing.bankId ?? '',
+              'Bank.name': existing.bankName ?? '',
+              'Bank.Country.id': existing.countryId ?? '',
+              'Bank.Country.name': existing.bankCountryName ?? '',
+              'Currency.id': existing.currencyId ?? '',
+              'Currency.name': curObj?.name ?? '',
+            };
+            setSelectedCompactAccount(compactAcc);
+            // show readable text in Autocomplete input
+            setCompactAccountInput(
+              compactAcc.holderName
+                ? `${compactAcc.holderName} — ${compactAcc.accountNumber || ''}${compactAcc['Currency.name'] ? ` (${compactAcc['Currency.name']})` : ''}`
+                : compactAcc.accountNumber || ''
+            );
+          }
+
+          // Load banks for prefilled country (optional but preserves UX)
           if (existing.countryId) {
             try {
               const banksRes = await axios.get('/masters/banks', {
@@ -491,7 +521,7 @@ const AddInputTransaction = ({ open, onClose, clientId, initialData, onSaved }) 
             }
           }
 
-          // Load accounts for prefilled bank/currency/country
+          // Load accounts for prefilled bank/currency/country (keeps payAccounts in sync)
           if (existing.bankId && existing.currencyId && existing.countryId) {
             setAccountsLoading(true);
             try {
@@ -505,10 +535,8 @@ const AddInputTransaction = ({ open, onClose, clientId, initialData, onSaved }) 
               });
               const list = accRes.data?.rs ?? accRes.data ?? [];
               setPayAccounts(Array.isArray(list) ? list : []);
-              // If the accountId doesn’t exist, keep account text as fallback
-              if (existing.accountId && !list.some(a => String(a.id) === String(existing.accountId))) {
-                // leave payAccountId as '' to avoid invalid selection
-                setPayAccountId('');
+              if (existing.accountId && !list.some((a) => String(a.id) === String(existing.accountId))) {
+                setPayAccountId(''); // keep consistent if account not in list
               }
             } catch {
               setPayAccounts([]);
@@ -517,18 +545,17 @@ const AddInputTransaction = ({ open, onClose, clientId, initialData, onSaved }) 
               setAccountsLoading(false);
             }
           }
-        } else if (existing.type === 'cash' && isCash) {
+        } else if (existingIsCash && isCash) {
+          // existing cash payload
           setCashCurrencyId(String(existing.currencyId || ''));
           setPayBoxId(String(existing.boxId || ''));
-          // Normalize items (denomination, quantity)
           const items = Array.isArray(existing.items) ? existing.items : [];
-          const normalized = items.map(it => ({
+          const normalized = items.map((it) => ({
             denomination: String(it.denomination ?? ''),
             quantity: String(it.quantity ?? ''),
           }));
           setCashItems(normalized.length > 0 ? normalized : [{ denomination: '', quantity: '' }]);
 
-          // Load boxes for the prefilled currency
           if (existing.currencyId) {
             setPayBoxesLoading(true);
             try {
@@ -538,8 +565,7 @@ const AddInputTransaction = ({ open, onClose, clientId, initialData, onSaved }) 
               });
               const list = res.data?.rs ?? res.data ?? [];
               setPayBoxes(Array.isArray(list) ? list : []);
-              // Clear boxId if not present anymore
-              if (existing.boxId && !list.some(b => String(b.id) === String(existing.boxId))) {
+              if (existing.boxId && !list.some((b) => String(b.id) === String(existing.boxId))) {
                 setPayBoxId('');
               }
             } catch {
@@ -625,16 +651,31 @@ const AddInputTransaction = ({ open, onClose, clientId, initialData, onSaved }) 
   useEffect(() => {
     let active = true;
     const q = String(compactAccountInput || '').trim();
-    if (!payOpen || !q || q.length < 2) {
+
+    // Si el diálogo no está abierto limpiamos opciones
+    if (!payOpen) {
       setCompactAccountOptions([]);
       setCompactAccountLoading(false);
       return () => { active = false; };
     }
+
     setCompactAccountLoading(true);
     const token = localStorage.getItem('token');
     const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    // currencyId tomado del servicio seleccionado (Service.currency.id)
+    const currencyId =
+      selectedService?.Currency?.id ??
+      selectedService?.['Currency.id'] ??
+      selectedService?.currencyId ??
+      '';
+
+    // construir params: incluir q solo si tiene 2+ caracteres, siempre enviar currencyId si existe
+    const params = {};
+    if (currencyId) params.currencyId = String(currencyId);
+    if (q && q.length >= 2) params.q = q;
+
     axios
-      .get('/bank-acc/bank-accounts/compact', { params: { q }, headers })
+      .get('/bank-acc/bank-accounts/compact', { params, headers })
       .then((res) => {
         if (!active) return;
         const list = res.data?.rs ?? res.data ?? [];
@@ -647,8 +688,9 @@ const AddInputTransaction = ({ open, onClose, clientId, initialData, onSaved }) 
       .finally(() => {
         if (active) setCompactAccountLoading(false);
       });
+
     return () => { active = false; };
-  }, [compactAccountInput, payOpen]);
+  }, [compactAccountInput, payOpen, selectedService?.Currency?.id, selectedService?.['Currency.id']]);
 
   // Cargar cuentas bancarias según selección de servicio (digital/efectivo)
   useEffect(() => {
