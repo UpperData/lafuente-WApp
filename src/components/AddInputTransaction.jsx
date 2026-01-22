@@ -217,7 +217,20 @@ const AddInputTransaction = ({ open, onClose, clientId, initialData, onSaved }) 
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setForm((prev) => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
+    setForm((prev) => {
+      const updated = { ...prev, [name]: type === 'checkbox' ? checked : value };
+      // validar fechas inmediatamente cuando se modifica cualquiera de las dos
+      if (name === 'inputDate' || name === 'deliveryDate') {
+        const inD = updated.inputDate ? new Date(updated.inputDate) : null;
+        const delD = updated.deliveryDate ? new Date(updated.deliveryDate) : null;
+        if (inD && delD && inD > delD) {
+          setDateError('F. Registro debe ser menor o igual que F. Retiro');
+        } else {
+          setDateError('');
+        }
+      }
+      return updated;
+    });
   };
 
   const handleFileChange = async (e) => {
@@ -400,6 +413,8 @@ const AddInputTransaction = ({ open, onClose, clientId, initialData, onSaved }) 
   const [payOpen, setPayOpen] = useState(false);
   const [payInfo, setPayInfo] = useState(null);
   const [payLoading, setPayLoading] = useState(false);
+  // Validación de fechas: F. Registro <= F. Retiro
+  const [dateError, setDateError] = useState(false);
   // Autocomplete compacto de cuentas (/bank-acc/bank-accounts/compact)
   const [compactAccountOptions, setCompactAccountOptions] = useState([]);
   const [compactAccountInput, setCompactAccountInput] = useState('');
@@ -499,6 +514,16 @@ const AddInputTransaction = ({ open, onClose, clientId, initialData, onSaved }) 
               'Currency.name': curObj?.name ?? '',
             };
             setSelectedCompactAccount(compactAcc);
+            // Asegurar que la opción exista en la lista para que el Autocomplete la muestre como valor seleccionado
+            setCompactAccountOptions((prev) => {
+              try {
+                if (!Array.isArray(prev)) return [compactAcc];
+                if (prev.some((p) => String(p.id) === String(compactAcc.id))) return prev;
+                return [compactAcc, ...prev];
+              } catch {
+                return [compactAcc];
+              }
+            });
             // show readable text in Autocomplete input
             setCompactAccountInput(
               compactAcc.holderName
@@ -876,6 +901,17 @@ const AddInputTransaction = ({ open, onClose, clientId, initialData, onSaved }) 
   // Payload en submit
   const handleSubmit = async () => {
     if (!clientId) return;
+    // Validación final: F. Registro <= F. Retiro
+    if (form.inputDate && form.deliveryDate) {
+      const inD = new Date(form.inputDate);
+      const delD = new Date(form.deliveryDate);
+      if (Number.isNaN(inD.getTime()) || Number.isNaN(delD.getTime()) || inD > delD) {
+        setDateError('F. Registro debe ser menor o igual que F. Retiro');
+        return;
+      } else {
+        setDateError('');
+      }
+    }
     const token = localStorage.getItem('token');
     const headers = { Authorization: `Bearer ${token}` };
 
@@ -957,15 +993,24 @@ const AddInputTransaction = ({ open, onClose, clientId, initialData, onSaved }) 
               {/* Servicio + F. Retiro */}
               <Stack spacing={2}>
                 <Autocomplete
+                  // Bloquear completamente la edición cuando estamos actualizando (editMode)
+                  disabled={saving || editMode}
+                  disableClearable={editMode}
                   options={serviceOptions}
                   loading={serviceLoading}
                   value={useMemo(
                     () => serviceOptions.find((o) => String(o.id) === String(form.serviceId)) || null,
                     [serviceOptions, form.serviceId]
                   )}
-                  onChange={(_e, val) => setForm((prev) => ({ ...prev, serviceId: val?.id ?? '' }))}
+                  onChange={(_e, val) => {
+                    if (editMode) return;
+                    setForm((prev) => ({ ...prev, serviceId: val?.id ?? '' }));
+                  }}
                   inputValue={serviceInput}
-                  onInputChange={(_e, val) => setServiceInput(val)}
+                  onInputChange={(_e, val) => {
+                    if (editMode) return;
+                    setServiceInput(val);
+                  }}
                   getOptionLabel={(o) => (o?.name ? `${o.name}${o.symbol ? ` (${o.symbol})` : ''}` : '')}
                   isOptionEqualToValue={(o, v) => String(o.id) === String(v.id)}
                   noOptionsText={serviceInput?.trim()?.length < 2 ? 'Escriba 2+ caracteres' : 'Sin resultados'}
@@ -975,9 +1020,11 @@ const AddInputTransaction = ({ open, onClose, clientId, initialData, onSaved }) 
                       label="Servicio"
                       placeholder="Escribe para buscar"
                       required
-                      disabled={saving}
+                      disabled={saving || editMode}
                       InputProps={{
                         ...params.InputProps,
+                        // readOnly además de disabled para evitar escritura en algunos navegadores/skins
+                        readOnly: editMode,
                         endAdornment: (
                           <>
                             {serviceLoading ? <CircularProgress color="inherit" size={18} /> : null}
@@ -999,6 +1046,8 @@ const AddInputTransaction = ({ open, onClose, clientId, initialData, onSaved }) 
                   fullWidth
                   disabled={!Boolean(form.serviceId) || saving}
                   InputLabelProps={{ shrink: true }}
+                  error={!!dateError}
+                  helperText={dateError || ' '}
                 />
 
                 <TextField
@@ -1010,7 +1059,8 @@ const AddInputTransaction = ({ open, onClose, clientId, initialData, onSaved }) 
                   fullWidth
                   disabled={!canEdit}
                   InputLabelProps={{ shrink: true }}
-                  helperText={editMode && elapsedDays !== '' ? `Días transcurridos: ${elapsedDays}` : ' '}
+                  error={!!dateError}
+                  helperText={dateError || (editMode && elapsedDays !== '' ? `Días transcurridos: ${elapsedDays}` : ' ')}
                 />
               </Stack>
 
@@ -1317,25 +1367,26 @@ const AddInputTransaction = ({ open, onClose, clientId, initialData, onSaved }) 
             <Stack spacing={2}>
               {/* Autocomplete independiente "Cuenta" (consume /bank-acc/bank-accounts/compact) */}
               <Autocomplete
-                options={compactAccountOptions}
-                getOptionLabel={(o) =>
-                  o ? `${o.holderName ?? ''} — ${o.accountNumber ?? ''}${o['Currency.name'] ? ` (${o['Bank.name']})` : ''}` : ''
-                }
-                renderOption={(props, o) => {
-                  const tip = [o?.['Bank.name'], o?.['Bank.Country.name']].filter(Boolean).join(' — ');
-                  return (
-                    <li {...props} title={tip}>
-                      <Tooltip title={tip} placement="right">
-                        <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-                          <Typography variant="body2">{o?.holderName ?? ''}</Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            {`${o?.['Bank.name']} - ${o?.accountNumber ?? ''}${o?.['Currency.name'] ? ` — ${o['Currency.name']}` : ''}`}
-                          </Typography>
-                        </Box>
-                      </Tooltip>
-                    </li>
-                  );
-                }}
+                value={selectedCompactAccount}
+                 options={compactAccountOptions}
+                 getOptionLabel={(o) =>
+                   o ? `${o.holderName ?? ''} — ${o.accountNumber ?? ''}${o['Currency.name'] ? ` (${o['Bank.name']})` : ''}` : ''
+                 }
+                 renderOption={(props, o) => {
+                   const tip = [o?.['Bank.name'], o?.['Bank.Country.name']].filter(Boolean).join(' — ');
+                   return (
+                     <li {...props} title={tip}>
+                       <Tooltip title={tip} placement="right">
+                         <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                           <Typography variant="body2">{o?.holderName ?? ''}</Typography>
+                           <Typography variant="caption" color="text.secondary">
+                             {`${o?.['Bank.name']} - ${o?.accountNumber ?? ''}${o?.['Currency.name'] ? ` — ${o['Currency.name']}` : ''}`}
+                           </Typography>
+                         </Box>
+                       </Tooltip>
+                     </li>
+                   );
+                 }}
                 inputValue={compactAccountInput}
                 onInputChange={(_e, v) => setCompactAccountInput(v)}
                 onChange={(_e, val) => {

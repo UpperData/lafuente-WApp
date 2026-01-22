@@ -391,25 +391,35 @@ const DebtorBank = () => {
                     <TableCell sx={{ cursor: 'pointer' }} onClick={() => toggleSort('id')}>
                       ID {orderBy === 'id' && (orderDir === 'asc' ? <ArrowUpwardIcon fontSize="small" /> : <ArrowDownwardIcon fontSize="small" />)}
                     </TableCell>
+
                     <TableCell sx={{ cursor: 'pointer' }} onClick={() => toggleSort('inputDate')}>
                       Fecha {orderBy === 'inputDate' && (orderDir === 'asc' ? <ArrowUpwardIcon fontSize="small" /> : <ArrowDownwardIcon fontSize="small" />)}
                     </TableCell>
+
                     <TableCell>Operador</TableCell>
 
                     <TableCell sx={{ cursor: 'pointer' }} onClick={() => toggleSort('serviceName')}>
-                      Transacción {orderBy === 'ServiceName' && (orderDir === 'asc' ? <ArrowUpwardIcon fontSize="small" /> : <ArrowDownwardIcon fontSize="small" />)}
+                      Transacción {orderBy === 'serviceName' && (orderDir === 'asc' ? <ArrowUpwardIcon fontSize="small" /> : <ArrowDownwardIcon fontSize="small" />)}
                     </TableCell>
 
                     <TableCell align="right" sx={{ cursor: 'pointer' }} onClick={() => toggleSort('amount')}>
                       Monto {orderBy === 'amount' && (orderDir === 'asc' ? <ArrowUpwardIcon fontSize="small" /> : <ArrowDownwardIcon fontSize="small" />)}
                     </TableCell>
+
                     <TableCell>Moneda</TableCell>
+
+                    <TableCell>Titular</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {paginated.map((r) => {
                      const person = safeGet(r.raw, 'audit.0.user.person') ?? safeGet(r.raw, 'audit.0.user') ?? null;
                      const operatorName = person ? `${person.firstName ?? ''} ${person.lastName ?? ''}`.trim() : '—';
+                     const txHolderName =
+                       safeGet(r.raw, 'payInfo.holderName') ??
+                       safeGet(r.raw, 'payInfo')?.holderName ??
+                       (accounts.find((a) => String(a.id) === String(r.payAccountId))?.holderName) ??
+                       '—';
                      return (
                        <TableRow key={r.id} hover>
                          <TableCell>{r.id}</TableCell>
@@ -420,19 +430,20 @@ const DebtorBank = () => {
                          <TableCell>{r.serviceName || safeGet(r.raw, 'Service.name') || '—'}</TableCell>
                          <TableCell align="right" sx={{ fontWeight: 700 }}>{r.currencySymbol} {r.amount.toFixed(2)}</TableCell>
                          <TableCell>{r.currencySymbol ? `${r.currencySymbol} ${r.currencyName}` : r.currencyName}</TableCell>
+                         <TableCell>{txHolderName}</TableCell>
                        </TableRow>
                      );
                    })}
 
-                  {paginated.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={6} align="center" sx={{ py: 6 }}>
-                        No hay transacciones.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
+                {paginated.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={7} align="center" sx={{ py: 6 }}>
+                      No hay transacciones.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
             </TableContainer>
 
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 1 }}>
