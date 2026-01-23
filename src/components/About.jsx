@@ -19,7 +19,7 @@ const About = () => {
     const license = pkg.license || '';
     const author =
       (typeof pkg.author === 'string' ? pkg.author : pkg.author?.name) || '—';
-    const homepage = pkg.homepage || '';
+    const homepage = pkg.site || '';
     const repo =
       (typeof pkg.repository === 'string' ? pkg.repository : pkg.repository?.url) || '';
     return { name, version, license, author, homepage, repo };
@@ -116,7 +116,7 @@ const About = () => {
               <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
                 <DevicesIcon color="action" />
                 <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                  Propiedades del sistema
+                  Entorno
                 </Typography>
               </Stack>
               <Divider sx={{ mb: 1.5 }} />

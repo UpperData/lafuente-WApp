@@ -37,6 +37,10 @@ import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import PhoneIphoneIcon from '@mui/icons-material/PhoneIphone';
+import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
+import GetAppIcon from '@mui/icons-material/GetApp';
+import PrintIcon from '@mui/icons-material/Print';
+import logoSrc from '../../assets/images/logo-fuente.png';
 
 const safeGet = (obj, ...paths) => {
   for (const p of paths) {
@@ -239,6 +243,344 @@ const DebtorBank = () => {
     }
   };
 
+  const buildExportRows = () => {
+    const headers = ['ID', 'Fecha', 'Operador', 'Transacción', 'Monto', 'Moneda', 'Titular'];
+    const rows = paginated.length > 0 ? paginated : sortedTx; // export current page by default, fallback to full sorted list
+    const data = rows.map((r) => {
+      const person = safeGet(r.raw, 'audit.0.user.person') ?? safeGet(r.raw, 'audit.0.user') ?? null;
+      const operatorName = person ? `${person.firstName ?? ''} ${person.lastName ?? ''}`.trim() : '—';
+      const holder =
+        safeGet(r.raw, 'payInfo.holderName') ??
+        safeGet(r.raw, 'payInfo')?.holderName ??
+        (accounts.find((a) => String(a.id) === String(r.payAccountId))?.holderName) ??
+        '—';
+      // Mostrar NOMBRE de moneda en las exportaciones/impr.
+      const currencyDisplay = r.currencyName || '';
+      return [
+        r.id,
+        r.inputDate ? new Date(r.inputDate).toLocaleDateString() : '',
+        operatorName,
+        r.serviceName || safeGet(r.raw, 'Service.name') || '',
+        r.amount?.toFixed(2) ?? '0.00',
+        currencyDisplay,
+        holder,
+      ];
+    });
+    return { headers, data };
+  };
+
+  // helper: obtener logo (dataURL) desde asset importado
+  const fetchLogoDataUrl = async () => {
+    try {
+      // logoSrc apunta al asset importado (ruta procesada por el bundler)
+      const res = await fetch(logoSrc);
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      return await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    } catch {
+      return null;
+    }
+  };
+
+  // helper: construir texto compacto del titular / cuenta / banco / moneda
+  const buildHeaderAccountInfo = () => {
+    if (!activeAccount) {
+      return { titular: 'Todos', cuenta: 'Todas', banco: 'Todas', moneda: 'Todas', isAll: true };
+    }
+    const acc = accounts.find((a) => String(a.id) === String(activeAccount));
+    if (!acc) return { titular: 'Todos', cuenta: 'Todas', banco: 'Todas', moneda: 'Todas', isAll: true };
+    return {
+      titular: acc.holderName || '—',
+      cuenta: acc.account || '—',
+      banco: acc.bankName || '—',
+      moneda: acc.currencyName || '—',
+      isAll: false,
+    };
+  };
+
+  // helper: sanitize string for filenames (remove/replace unsafe chars)
+  const sanitizeFilename = (s = '') =>
+    String(s || '')
+      .trim()
+      .replace(/\s+/g, '_')
+      .replace(/[^a-zA-Z0-9_\-@.]/g, '')
+      .slice(0, 60);
+
+  const handleExportPDF = async () => {
+    try {
+      const jsPDFModule = await import('jspdf');
+      const autoTableModule = await import('jspdf-autotable');
+      const jsPDFCtor = jsPDFModule?.jsPDF ?? jsPDFModule?.default ?? jsPDFModule;
+      if (!jsPDFCtor) throw new Error('No se pudo cargar jspdf');
+
+      const doc = new jsPDFCtor({ unit: 'pt', format: 'a4' });
+      const autoTable = autoTableModule?.default ?? autoTableModule;
+      const { headers, data } = buildExportRows();
+
+      // logo
+      const logoData = await fetchLogoDataUrl();
+      if (logoData) {
+        try {
+          doc.addImage(logoData, 'PNG', 40, 28, 48, 48);
+        } catch (e) {
+          // ignore if addImage fails
+        }
+      }
+
+      // Header (compacto) (posicionar a la derecha del logo si existe)
+      const titleX = logoData ? 100 : 40;
+      doc.setFontSize(16);
+      doc.setTextColor('#0f172a');
+      doc.text('La Fuente · Reporte Cuentas Deudoras', titleX, 48);
+      doc.setFontSize(10);
+      doc.setTextColor('#475569');
+      doc.text(`Generado: ${new Date().toLocaleString()}`, titleX, 64);
+
+      // compact account info
+      const { titular, cuenta, banco, moneda, isAll } = buildHeaderAccountInfo();
+      // compact panel: small rounded box with key/value pairs
+      const infoX = titleX;
+      const infoY = 88;
+      const infoW = 420;
+      const infoH = isAll ? 18 : 42;
+      try {
+        doc.setFillColor(245, 249, 255);
+        doc.roundedRect(infoX - 6, infoY - 12, infoW, infoH, 4, 4, 'F');
+      } catch (e) {
+        // older jspdf builds may not support roundedRect: fallback rect
+        doc.setFillColor(245, 249, 255);
+        doc.rect(infoX - 6, infoY - 12, infoW, infoH, 'F');
+      }
+      doc.setTextColor('#0f172a');
+      doc.setFontSize(10);
+      if (!isAll) {
+        // line 1: Titular (bold key + value), Cuenta (bold key + value)
+        doc.setFont(undefined, 'bold'); doc.text('Titular:', infoX, infoY);
+        doc.setFont(undefined, 'normal'); doc.text(`${titular}`, infoX + 40, infoY);
+        doc.setFont(undefined, 'bold'); doc.text('Cuenta:', infoX + 260, infoY);
+        doc.setFont(undefined, 'normal'); doc.text(`${cuenta}`, infoX + 308, infoY);
+        // line 2: Banco · Moneda
+        doc.setFont(undefined, 'bold'); doc.text('Banco:', infoX, infoY + 14);
+        doc.setFont(undefined, 'normal'); doc.text(`${banco}`, infoX + 40, infoY + 14);
+        doc.setFont(undefined, 'bold'); doc.text('Moneda:', infoX + 260, infoY + 14);
+        doc.setFont(undefined, 'normal'); doc.text(`${moneda}`, infoX + 308, infoY + 14);
+      } else {
+        doc.setFont(undefined, 'normal');
+        doc.text('Titular: Todos · Cuentas: Todas · Moneda: Todas', infoX, infoY);
+      }
+
+      if (typeof doc.autoTable === 'function') {
+        doc.autoTable({
+          head: [headers],
+          body: data,
+          startY: 140,
+          theme: 'striped',
+          headStyles: { fillColor: [2, 112, 255], textColor: 255, fontStyle: 'bold' },
+          styles: { fontSize: 9, cellPadding: 6 },
+          columnStyles: { 4: { halign: 'right' } },
+        });
+      } else if (typeof autoTable === 'function') {
+        autoTable(doc, {
+          head: [headers],
+          body: data,
+          startY: 140,
+          theme: 'striped',
+          headStyles: { fillColor: [2, 112, 255], textColor: 255, fontStyle: 'bold' },
+          styles: { fontSize: 9, cellPadding: 6 },
+          columnStyles: { 4: { halign: 'right' } },
+        });
+      } else {
+        // fallback minimal table
+        const yStart = 140;
+        const colWidths = headers.map(() => 480 / headers.length);
+        doc.setFontSize(9);
+        let y = yStart;
+        headers.forEach((h, i) => doc.text(String(h), 40 + (i ? colWidths.slice(0, i).reduce((a, b) => a + b, 0) : 0), y));
+        y += 14;
+        data.forEach((row) => {
+          row.forEach((cell, i) => {
+            doc.text(String(cell ?? ''), 40 + (i ? colWidths.slice(0, i).reduce((a, b) => a + b, 0) : 0), y);
+          });
+          y += 12;
+          if (y > 700) { doc.addPage(); y = 40; }
+        });
+      }
+
+      // filename: include titular and cuenta when specific
+      const dateSuffix = new Date().toISOString().slice(0, 10);
+      const fileSuffix = !isAll ? `_${sanitizeFilename(titular)}_${sanitizeFilename(cuenta)}` : '';
+      doc.save(`debtor-banks_${dateSuffix}${fileSuffix}.pdf`);
+    } catch (e) {
+      console.error('Export PDF failed', e);
+    }
+  };
+
+  const handleExportExcel = async () => {
+    try {
+      const { headers, data } = buildExportRows();
+      // intentar obtener logo como dataURL
+      const logoData = await fetchLogoDataUrl();
+      const imgSrc = logoData || logoSrc || '';
+      const { titular, cuenta, banco, moneda, isAll } = buildHeaderAccountInfo();
+
+      // compact info line for header
+      const infoHtml = !isAll
+        ? `<div style="font-size:12px;color:#0f172a"><strong>Titular:</strong> ${titular} &nbsp; <strong>Cuenta:</strong> ${cuenta} &nbsp; <strong>Banco:</strong> ${banco} &nbsp; <strong>Moneda:</strong> ${moneda}</div>`
+        : `<div style="font-size:12px;color:#0f172a">Titular: Todos · Cuentas: Todas · Moneda: Todas</div>`;
+
+      // construir HTML con logo y tabla; Excel puede abrir este .xls/html con formato
+      const style = `
+        <style>
+          body{ font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial; color:#111827; padding:8px; }
+          .header{ display:flex; align-items:center; gap:12px; margin-bottom:8px; }
+          .title{ font-size:16px; font-weight:700; color:#0f172a; }
+          .meta{ font-size:11px; color:#475569; }
+          table{ border-collapse:collapse; width:100%; font-size:12px; }
+          th{ background:#0369a1; color:#fff; padding:6px 8px; text-align:left; font-weight:700; }
+          td{ border:1px solid #e6edf3; padding:6px 8px; vertical-align:top; }
+          tbody tr:nth-child(odd){ background:#fbfeff; }
+        </style>
+      `;
+      const logoImg = imgSrc ? `<img src="${imgSrc}" style="width:72px;height:auto;object-fit:contain" />` : '';
+      const headerHtml = `<div class="header">${logoImg}<div><div class="title">La Fuente · Reporte Cuentas Deudoras</div><div class="meta">Generado: ${new Date().toLocaleString()}</div>${infoHtml}</div></div>`;
+      const tableHead = `<tr>${headers.map((h) => `<th>${h}</th>`).join('')}</tr>`;
+      const tableBody = data
+        .map(
+          (row) => `<tr>${row.map((c, i) => `<td${i === 4 ? ' style="text-align:right"' : ''}>${String(c ?? '')}</td>`).join('')}</tr>`
+        )
+        .join('');
+      const xmlStart = `<!DOCTYPE html><html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">`;
+      const html = `${xmlStart}<head><meta charset="utf-8">${style}</head><body>${headerHtml}<table><thead>${tableHead}</thead><tbody>${tableBody}</tbody></table></body></html>`;
+
+      // BOM helps Excel detect UTF-8; use application/vnd.ms-excel
+      const bom = '\uFEFF';
+      const blob = new Blob([bom + html], { type: 'application/vnd.ms-excel;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const dateSuffix = new Date().toISOString().slice(0, 10);
+      const fileSuffix = !isAll ? `_${sanitizeFilename(titular)}_${sanitizeFilename(cuenta)}` : '';
+      a.download = `debtor-banks_${dateSuffix}${fileSuffix}.xls`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('Export Excel (HTML) failed', e);
+    }
+  };
+
+  const handlePrint = async () => {
+    const { headers, data } = buildExportRows();
+    const { titular, cuenta, banco, moneda, isAll } = buildHeaderAccountInfo();
+
+    // obtener logo embebido si es posible (mejor compatibilidad en impresión)
+    let logoData = null;
+    try {
+      logoData = await fetchLogoDataUrl();
+    } catch (e) {
+      logoData = null;
+    }
+    const logo = logoData || logoSrc || '';
+
+    const style = `
+      <style>
+        body{ font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial; color:#111827; padding:20px; }
+        .title{ font-size:18px; font-weight:700; color:#0f172a; margin-bottom:4px; }
+        .meta{ font-size:11px; color:#475569; margin-bottom:8px; }
+        .panel{ background:#f5f9ff; padding:8px 10px; border-radius:6px; display:inline-block; margin-bottom:12px; }
+        .kv{ display:inline-block; margin-right:12px; font-size:12px; color:#0f172a; }
+        .kv .k{ font-weight:700; margin-right:6px; }
+        .kv .v{ font-family: monospace; color:#0b1220; }
+        table{ border-collapse:collapse; width:100%; font-size:12px; }
+        th{ background:#0369a1; color:#fff; padding:8px 10px; text-align:left; font-weight:700; }
+        td{ border:1px solid #e6edf3; padding:8px 10px; vertical-align:top; }
+        tbody tr:nth-child(odd){ background:#fbfeff; }
+      </style>
+    `;
+
+    const tableHead = `<tr>${headers.map((h) => `<th>${h}</th>`).join('')}</tr>`;
+    const tableBody = data
+      .map((row) => `<tr>${row.map((c, i) => `<td${i === 4 ? ' style="text-align:right"' : ''}>${String(c ?? '')}</td>`).join('')}</tr>`)
+      .join('');
+
+    const infoLine = !isAll
+      ? `<div class="panel"><span class="kv"><span class="k">Titular:</span><span class="v">${titular}</span></span><span class="kv"><span class="k">Cuenta:</span><span class="v">${cuenta}</span></span><span class="kv"><span class="k">Banco:</span><span class="v">${banco}</span></span><span class="kv"><span class="k">Moneda:</span><span class="v">${moneda}</span></span></div>`
+      : `<div class="panel">Titular: Todos · Cuentas: Todas · Moneda: Todas</div>`;
+
+    const html = `<!doctype html><html><head><meta charset="utf-8">${style}</head><body>
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+        <div style="flex:0 0 auto">${logo ? `<img src="${logo}" style="width:64px;height:auto;object-fit:contain;margin-right:8px" alt="logo" />` : ''}</div>
+        <div style="flex:1 1 auto">
+          <div class="title">Reporte · Cuentas Deudoras</div>
+          <div class="meta">Generado: ${new Date().toLocaleString()}</div>
+          ${infoLine}
+        </div>
+      </div>
+      <table><thead>${tableHead}</thead><tbody>${tableBody}</tbody></table>
+      </body></html>`;
+
+    // abrir ventana (debe ejecutarse en evento user's click; si falla, informar)
+    const w = window.open('', '_blank');
+    if (!w) {
+      // popup bloqueado
+      // usar alert para notificar al usuario
+      // mantener respuesta corta y no intrusiva
+      alert('Permita ventanas emergentes en su navegador para imprimir.');
+      return;
+    }
+
+    try {
+      w.document.open();
+      w.document.write(html);
+      w.document.close();
+
+      // esperar a que el contenido esté listo, con fallback de timeout
+      const tryPrint = () => {
+        try {
+          w.focus();
+          w.print();
+          // opcional: cerrar ventana después de imprimir
+          // setTimeout(() => w.close(), 500);
+        } catch (err) {
+          console.error('Print failed', err);
+        }
+      };
+
+      // si onload está disponible
+      if (typeof w.onload === 'function') {
+        w.onload = tryPrint;
+      }
+      // polling por readyState por compatibilidad
+      const poll = setInterval(() => {
+        try {
+          if (w.document && w.document.readyState === 'complete') {
+            clearInterval(poll);
+            tryPrint();
+          }
+        } catch (e) {
+          clearInterval(poll);
+          tryPrint();
+        }
+      }, 200);
+
+      // fallback: forzar print después de 1s si no detecta readyState
+      setTimeout(() => {
+        clearInterval(poll);
+        tryPrint();
+      }, 1500);
+    } catch (e) {
+      console.error('Error preparing print', e);
+    }
+  };
+  React.useEffect(() => {
+    document.title = 'La Fuente | Cuentas deudoras';
+  }, []);
   return (
     <Box sx={{ p: { xs: 2, md: 4 } }}>
         <Stack spacing={0.5} mb={1}>
@@ -269,6 +611,48 @@ const DebtorBank = () => {
           <Button variant="outlined" size="small" onClick={fetchData} disabled={refreshing || loading}>
             Recargar
           </Button>
+
+          <Tooltip title="Exportar PDF (estilizado)">
+            <span>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<PictureAsPdfIcon />}
+                onClick={handleExportPDF}
+                disabled={loading}
+              >
+                PDF
+              </Button>
+            </span>
+          </Tooltip>
+
+          <Tooltip title="Descargar Excel">
+            <span>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<GetAppIcon />}
+                onClick={handleExportExcel}
+                disabled={loading}
+              >
+                Excel
+              </Button>
+            </span>
+          </Tooltip>
+
+          <Tooltip title="Imprimir">
+            <span>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<PrintIcon />}
+                onClick={handlePrint}
+                disabled={loading}
+              >
+                Imprimir
+              </Button>
+            </span>
+          </Tooltip>
         </Stack>
       </Stack>
 

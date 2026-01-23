@@ -3,6 +3,11 @@
   "private": true,
   "version": "1.12.25",
   "type": "module",
+  "site": "https://wa.cambioslafuentelg.com",
+  "repository": {
+    "backend": "https://github.com/UpperData/apiMedical24.git  ",
+    "frontend": "https://github.com/UpperData/lafuente-WApp.git"
+  },
   "scripts": {
     "start": "vite",
     "build": "vite build",
@@ -19,10 +24,13 @@
     "@mui/material": "^7.3.4",
     "axios": "^1.12.2",
     "chart.js": "^4.5.0",
+    "jspdf": "^4.0.0",
+    "jspdf-autotable": "^5.0.7",
     "react": "^19.1.1",
     "react-chartjs-2": "^5.3.0",
     "react-dom": "^19.1.1",
-    "react-router-dom": "^7.9.3"
+    "react-router-dom": "^7.9.3",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@eslint/js": "^9.36.0",
