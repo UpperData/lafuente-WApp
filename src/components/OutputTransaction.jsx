@@ -273,6 +273,18 @@ const OutputTransaction = ({ clientId, clientName, createdAtFrom, createdAtTo })
     setDestModalOpen(true);
   };
 
+  // helper: etiqueta compacta según awaitDelivery
+  const formatAwaitDeliveryLabel = (awaitDelivery) => {
+    if (awaitDelivery == null || awaitDelivery === '') return '';
+    const n = Number(awaitDelivery);
+    if (Number.isNaN(n)) return '';
+    if (n === 0) return ' (hoy)';
+    if (n === 1) return ' (mañana)';
+    if (n === -1) return ' (ayer)';
+    if (n > 1) return ` (en ${n} días)`;
+    return ` (hace ${Math.abs(n)} días)`;
+  };
+
   return (
     <Box>
       {loading && <LinearProgress sx={{ mb: 1 }} />}
@@ -308,10 +320,12 @@ const OutputTransaction = ({ clientId, clientName, createdAtFrom, createdAtTo })
             <TableRow>
               <TableCell>Grupo</TableCell>
               <TableCell>ID</TableCell>
+              <TableCell>Transacción</TableCell>
+              <TableCell>F. Registro</TableCell>
               <TableCell>F. Retiro</TableCell>
-              <TableCell>Tipo</TableCell>
-              <TableCell>Monto</TableCell>
-              <TableCell>Cta destino</TableCell> {/* NUEVA COLUMNA */}
+              <TableCell>A paga</TableCell>
+              <TableCell>T. pago</TableCell>
+              <TableCell>Inf. Pago</TableCell>
               <TableCell>Acciones</TableCell>
             </TableRow>
           </TableHead>
@@ -319,40 +333,109 @@ const OutputTransaction = ({ clientId, clientName, createdAtFrom, createdAtTo })
             {/* filas agrupadas */}
             {grouped.map((g) => {
               const inputDateStr = g.inputDate ? new Date(g.inputDate).toLocaleDateString() : '-';
-              const deliveryDateStr = g.deliveryDate ? new Date(g.deliveryDate).toLocaleDateString() : '-';
+              const deliveryDateRaw = g.deliveryDate ? new Date(g.deliveryDate).toLocaleDateString() : '-';
+              // prefer group-level awaitDelivery, otherwise first item's awaitDelivery
+              const groupAwait = g.awaitDelivery ?? g.list?.[0]?.awaitDelivery ?? null;
+              const deliveryDateStr = `${deliveryDateRaw}${formatAwaitDeliveryLabel(groupAwait)}`;
+
+              // Service.name y Service.description del primer item (varios fallbacks)
+              const first = g.list?.[0] ?? {};
+              const firstServiceName =
+                first['Service.name'] ??
+                first.Service?.name ??
+                first.serviceName ??
+                first['serviceName'] ??
+                '-';
+              const firstServiceDesc =
+                first['Service.description'] ??
+                first.Service?.description ??
+                first.serviceDescription ??
+                first.description ??
+                '';
+
+              // calcular A paga: suma del campo netAmount por item
+              const paySum = (g.list || []).reduce((sum, it) => {
+                return sum + Number(it.netAmount ?? it.NetAmount ?? 0);
+              }, 0);
+
+              // formateador según primera fila
+              const currencyIsDollar = (first['Service.currencyDestination.name'] ?? first.Service?.currencyDestination?.name ?? '').toUpperCase().includes('DOLAR');
+              const formatter = new Intl.NumberFormat('es-VE', { style: 'currency', currency: currencyIsDollar ? 'USD' : 'VES', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+              const formattedPay = formatter.format(paySum);
+
+              // T. pago: usar Service.ServiceTypeDestination.name del primer item (fallbacks)
+              const tPago =
+                first['Service.ServiceTypeDestination.name'] ??
+                first.Service?.ServiceTypeDestination?.name ??
+                first['Service.serviceTypeDestinationName'] ??
+                first.serviceTypeDestinationName ??
+                g.payDestination?.serviceTypeDestinationName ??
+                g.serviceType ??
+                '-';
+
               return (
                 <TableRow key={`g-${g.id}`} hover onClick={() => handleViewGroup(g)} sx={{ cursor: 'pointer' }}>
                   <TableCell>
                     <Box display="flex" alignItems="center">
-                      <Circle color={g.color} />
-                      <Tooltip title={g.note || ''} arrow>
+                      <Circle color={g.color || '#ccc'} />
+                      <Tooltip title={g.name || ''} arrow>
                         <span>{g.name || '-'}</span>
                       </Tooltip>
                     </Box>
                   </TableCell>
                   <TableCell>-</TableCell>
                   <TableCell>
-                    <Tooltip title={`F. Solicitud: ${inputDateStr}`} arrow>
-                      <span>{deliveryDateStr}</span>
+                    <Tooltip title={firstServiceDesc} arrow>
+                      <span>{firstServiceName}</span>
                     </Tooltip>
                   </TableCell>
-                  <TableCell>{g.serviceType}</TableCell>
                   <TableCell>
-                    {g.currencySymbol ? `${g.currencySymbol} ${g.totalAmount}` : g.totalAmount}
+                    <Tooltip title={`F. Entrada: ${inputDateStr}`} arrow><span>{inputDateStr}</span></Tooltip>
                   </TableCell>
-                  {/* Botón Cta destino (grupo) */}
+                  <TableCell>
+                    <Tooltip title={`F. Retiro: ${deliveryDateStr}`} arrow><span>{deliveryDateStr}</span></Tooltip>
+                  </TableCell>
+                  <TableCell>{formattedPay}</TableCell>
+                  <TableCell>{tPago}</TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
-                    <Tooltip title="Ver cuenta(s) destino" arrow>
-                      <span>
-                        <IconButton
+                    {(() => {
+                      const first = g.list?.[0] ?? {};
+                      const svcDestId =
+                        first['Service.ServiceTypeDestination.id'] ??
+                        first.Service?.ServiceTypeDestination?.id ??
+                        first['Service.serviceTypeDestinationId'] ??
+                        first.serviceTypeDestinationId ??
+                        null;
+                      const svcDestName =
+                        first['Service.ServiceTypeDestination.name'] ??
+                        first.Service?.ServiceTypeDestination?.name ??
+                        first['Service.serviceTypeDestinationName'] ??
+                        first.serviceTypeDestinationName ??
+                        null;
+
+                      let label = 'Cuenta';
+                      if (svcDestId != null) {
+                        if (Number(svcDestId) === 1) label = 'Cuenta';
+                        else if (Number(svcDestId) === 2) label = 'Persona';
+                      } else if (svcDestName != null) {
+                        const s = String(svcDestName).toLowerCase();
+                        if (s === '1' || s.includes('cuenta')) label = 'Cuenta';
+                        else if (s === '2' || s.includes('persona')) label = 'Persona';
+                      }
+
+                      return (
+                        <Button
                           size="small"
-                          color="primary"
-                          onClick={() => openDestinationModalForGroup(g)}
+                          variant="outlined"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openDestinationModalForGroup(g);
+                          }}
                         >
-                          <AccountBalanceIcon fontSize="small" />
-                        </IconButton>
-                      </span>
-                    </Tooltip>
+                          {label}
+                        </Button>
+                      );
+                    })()}
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <Stack direction="row" spacing={0.5} alignItems="center">
@@ -389,22 +472,42 @@ const OutputTransaction = ({ clientId, clientName, createdAtFrom, createdAtTo })
               const gNote = r['TransactionGroup.note'] ?? r.transactionGroupNote ?? '';
               const gColor = r['TransactionGroup.color'] ?? r.transactionGroupColor ?? '#ccc';
               const inputDateStr = r.inputDate ? new Date(r.inputDate).toLocaleDateString() : '-';
-              const deliveryDateStr = r.deliveryDate ? new Date(r.deliveryDate).toLocaleDateString() : '-';
-              const serviceType = r['Service.ServiceType.name'] ?? r.serviceTypeName ?? '-';
+              const deliveryDateRaw = r.deliveryDate ? new Date(r.deliveryDate).toLocaleDateString() : '-';
+              const singleAwait = r.awaitDelivery ?? r['Transaction.awaitDelivery'] ?? null;
+              const deliveryDateStr = `${deliveryDateRaw}${formatAwaitDeliveryLabel(singleAwait)}`;
 
-              const currencySymbol =
-                r['Service.currencyDestination.symbol'] ??
-                r.Service?.currencyDestination?.symbol ??
-                r.currencyDestinationSymbol ??
+              // asegurar uso de Service.name / Service.description con fallbacks
+              const serviceName =
+                r['Service.name'] ??
+                r.Service?.name ??
+                r.serviceName ??
+                r['serviceName'] ??
+                '-';
+              const serviceDesc =
+                r['Service.description'] ??
+                r.Service?.description ??
+                r.serviceDescription ??
+                r.description ??
                 '';
-              const formatter = new Intl.NumberFormat('es-VE', {
-                style: 'currency',
-                currency: (r['Service.currencyDestination.name'] ?? '').toUpperCase().includes('DOLAR') ? 'USD' : 'VES',
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              });
-              const formattedAmount =
-                r.amount != null ? formatter.format(Number(r.amount)) : '-';
+
+              // calcular A paga para single: usar campo netAmount
+              const payAmount = Number(r.netAmount ?? r.NetAmount ?? 0);
+
+              const currencyIsDollar = (r['Service.currencyDestination.name'] ?? r.Service?.currencyDestination?.name ?? '').toUpperCase().includes('DOLAR');
+              const formatter = new Intl.NumberFormat('es-VE', { style: 'currency', currency: currencyIsDollar ? 'USD' : 'VES', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+              const formattedPay = formatter.format(payAmount);
+
+              // T. pago: usar Service.ServiceTypeDestination.name con fallbacks
+              const tPago =
+                r['Service.ServiceTypeDestination.name'] ??
+                r.Service?.ServiceTypeDestination?.name ??
+                r['Service.serviceTypeDestinationName'] ??
+                r.serviceTypeDestinationName ??
+                r['TransactionGroup.serviceTypeDestinationName'] ??
+                r.transactionGroupServiceTypeDestinationName ??
+                r['Service.ServiceType.name'] ??
+                r.serviceTypeName ??
+                '-';
 
               return (
                 <TableRow key={`s-${r.id}`}>
@@ -418,29 +521,53 @@ const OutputTransaction = ({ clientId, clientName, createdAtFrom, createdAtTo })
                   </TableCell>
                   <TableCell>{r.id}</TableCell>
                   <TableCell>
-                    <Tooltip title={`F. Solicitud: ${inputDateStr}`} arrow>
-                      <span>{deliveryDateStr}</span>
+                    <Tooltip title={serviceDesc} arrow>
+                      <span>{serviceName}</span>
                     </Tooltip>
                   </TableCell>
-                  <TableCell>{serviceType}</TableCell>
                   <TableCell>
-                    {r.amount != null
-                      ? (currencySymbol ? `${currencySymbol} ${formattedAmount}` : formattedAmount)
-                      : '-'}
+                    <Tooltip title={`F. Entrada: ${inputDateStr}`} arrow><span>{inputDateStr}</span></Tooltip>
                   </TableCell>
-                  {/* Botón Cta destino (single) */}
                   <TableCell>
-                    <Tooltip title="Ver cuenta(s) destino" arrow>
-                      <span>
-                        <IconButton
+                    <Tooltip title={`F. Retiro: ${deliveryDateStr}`} arrow><span>{deliveryDateStr}</span></Tooltip>
+                  </TableCell>
+                  <TableCell>{formattedPay}</TableCell>
+                  <TableCell>{tPago}</TableCell>
+                  <TableCell>
+                    {(() => {
+                      const svcDestId =
+                        r['Service.ServiceTypeDestination.id'] ??
+                        r.Service?.ServiceTypeDestination?.id ??
+                        r['Service.serviceTypeDestinationId'] ??
+                        r.serviceTypeDestinationId ??
+                        null;
+                      const svcDestName =
+                        r['Service.ServiceTypeDestination.name'] ??
+                        r.Service?.ServiceTypeDestination?.name ??
+                        r['Service.serviceTypeDestinationName'] ??
+                        r.serviceTypeDestinationName ??
+                        null;
+
+                      let label = 'Cuenta';
+                      if (svcDestId != null) {
+                        if (Number(svcDestId) === 1) label = 'Cuenta';
+                        else if (Number(svcDestId) === 2) label = 'Persona';
+                      } else if (svcDestName != null) {
+                        const s = String(svcDestName).toLowerCase();
+                        if (s === '1' || s.includes('cuenta')) label = 'Cuenta';
+                        else if (s === '2' || s.includes('persona')) label = 'Persona';
+                      }
+
+                      return (
+                        <Button
                           size="small"
-                          color="primary"
+                          variant="outlined"
                           onClick={() => openDestinationModalForSingle(r)}
                         >
-                          <AccountBalanceIcon fontSize="small" />
-                        </IconButton>
-                      </span>
-                    </Tooltip>
+                          {label}
+                        </Button>
+                      );
+                    })()}
                   </TableCell>
                   <TableCell>
                     <Stack direction="row" spacing={0.5} alignItems="center">
