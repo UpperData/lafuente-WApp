@@ -15,6 +15,7 @@ export default defineConfig(({ mode }) => {
       '127.0.0.1',     // Servidor local
       'wa.cambioslafuentelg.com', // Servidor de produccion
       'bk.cambioslafuentelg.com', // Servidor backend
+      'cambioslafuentelg.com'
     ],
     port, 
     strictPort: true, 
