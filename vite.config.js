@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
-  const port = Number(env.VITE_PORT || env.PORT || 5173);
+  const port = Number(env.VITE_PORT);
   const shouldOpen = String(env.VITE_OPEN ?? 'false').toLowerCase() === 'true';
 
   return {
