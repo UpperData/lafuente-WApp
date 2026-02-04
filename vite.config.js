@@ -11,7 +11,8 @@ export default defineConfig(({ mode }) => {
     server: { 
       allowedHosts: [
       'esw.truo.co',   // Servidor de desarrollo upperdata
-      'localhost',     // Servidor local
+      'localhost',
+      '127.0.0.1',     // Servidor local
       'wa.cambioslafuentelg.com', // Servidor de produccion
       'bk.cambioslafuentelg.com', // Servidor backend
     ],
