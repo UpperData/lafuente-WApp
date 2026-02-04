@@ -45,7 +45,7 @@ import logoSrc from '../../assets/images/logo-fuente.png';
 const safeGet = (obj, ...paths) => {
   for (const p of paths) {
     if (obj == null) continue;
-    if (typeof p === 'string' && p.includes('.')) {
+    if (typeof p === 'string' && p.includes('.') ) {
       // intento ruta anidada (Service.name -> obj.Service.name)
       const v = p.split('.').reduce((a, k) => (a ? a[k] : undefined), obj);
       if (v !== undefined) return v;
