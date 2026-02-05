@@ -307,6 +307,7 @@ const ServiceList = ({ serviceTypeId, name, currencyId, currencyDestinationId, s
         description: form.description,
         isActived: !!form.isActived,
         exchangeRateMode: !!form.exchangeRateMode,
+        isExchangeRateMode: !!form.exchangeRateMode,
         // Adjunta las reglas diarias si el backend las soporta
         ...(dailyCommissions.length > 0 ? { dailyCommissions } : {}),
       };
@@ -756,7 +757,21 @@ const ServiceList = ({ serviceTypeId, name, currencyId, currencyDestinationId, s
                         checked={!!form.exchangeRateMode}
                         onChange={(e) => setForm(prev => ({ ...prev, exchangeRateMode: e.target.checked }))}
                         name="exchangeRateMode"
-                        color="primary"
+                        sx={{
+                          '& .MuiSwitch-switchBase': {
+                            color: (theme) => theme.palette.success.main,
+                            '&.Mui-checked': {
+                              color: (theme) => theme.palette.primary.main,
+                              '& + .MuiSwitch-track': {
+                                backgroundColor: (theme) => theme.palette.primary.main,
+                              },
+                            },
+                          },
+                          '& .MuiSwitch-track': {
+                            backgroundColor: (theme) => theme.palette.success.main,
+                            opacity: 0.5,
+                          },
+                        }}
                       />
                     }
                     label={form.exchangeRateMode ? 'Tasa' : 'Comisión'}

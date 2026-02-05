@@ -45,7 +45,7 @@ import logoSrc from '../../assets/images/logo-fuente.png';
 const safeGet = (obj, ...paths) => {
   for (const p of paths) {
     if (obj == null) continue;
-    if (typeof p === 'string' && p.includes('.') ) {
+    if (typeof p === 'string' && p.includes('.')) {
       // intento ruta anidada (Service.name -> obj.Service.name)
       const v = p.split('.').reduce((a, k) => (a ? a[k] : undefined), obj);
       if (v !== undefined) return v;
@@ -634,8 +634,8 @@ const DebtorBank = () => {
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
         
         <Stack>
-          <Typography variant="h5" fontWeight={700}>
-            Cuentas Bancarias Deudoras 
+          <Typography variant="h5" fontWeight={800} sx={{ color: 'primary.main' }}>
+            Cuentas Bancarias Deudoras
           </Typography>
           <Typography variant="body2" color="text.secondary">
             Cuentas con pagos pendientes
@@ -831,10 +831,12 @@ const DebtorBank = () => {
                     </TableCell>
 
                     <TableCell align="right" sx={{ cursor: 'pointer' }} onClick={() => toggleSort('amount')}>
-                      Monto {orderBy === 'amount' && (orderDir === 'asc' ? <ArrowUpwardIcon fontSize="small" /> : <ArrowDownwardIcon fontSize="small" />)}
+                      Totalx {orderBy === 'amount' && (orderDir === 'asc' ? <ArrowUpwardIcon fontSize="small" /> : <ArrowDownwardIcon fontSize="small" />)}
                     </TableCell>
 
-                    <TableCell>Moneda</TableCell>
+                    <TableCell align="right">Neto</TableCell>
+
+                    <TableCell>Comisión</TableCell>
 
                     <TableCell>Titular</TableCell>
                   </TableRow>
@@ -857,7 +859,29 @@ const DebtorBank = () => {
                          </TableCell>
                          <TableCell>{r.serviceName || safeGet(r.raw, 'Service.name') || '—'}</TableCell>
                          <TableCell align="right" sx={{ fontWeight: 700 }}>{r.currencySymbol} {r.amount.toFixed(2)}</TableCell>
-                         <TableCell>{r.currencySymbol ? `${r.currencySymbol} ${r.currencyName}` : r.currencyName}</TableCell>
+                         <TableCell align="right">{(() => {
+                           const nAmt =
+                             safeGet(r.raw, 'payInfo.netAmount') ??
+                             safeGet(r.raw, 'netAmount') ??
+                             safeGet(r.raw, 'Service.netAmount') ??
+                             null;
+                           const n = Number(nAmt);
+                           if (Number.isFinite(n)) return `${r.currencySymbol ? r.currencySymbol + ' ' : ''}${n.toFixed(2)}`;
+                           return '-';
+                         })()}</TableCell>
+                         <TableCell>{(() => {
+                           const cAmt =
+                             safeGet(r.raw, 'payInfo.commissionAmount') ??
+                             safeGet(r.raw, 'CommissionServices.commissionAmount') ??
+                             safeGet(r.raw, 'commissionAmount') ??
+                             safeGet(r.raw, 'Service.commissionAmount') ??
+                             safeGet(r.raw, 'payInfo.commission') ??
+                             safeGet(r.raw, 'commission') ??
+                             null;
+                           const num = Number(cAmt);
+                           if (Number.isFinite(num)) return `${r.currencySymbol ? r.currencySymbol + ' ' : ''}${num.toFixed(2)}`;
+                           return '-';
+                         })()}</TableCell>
                          <TableCell>{txHolderName}</TableCell>
                        </TableRow>
                      );
@@ -865,7 +889,7 @@ const DebtorBank = () => {
 
                 {paginated.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} align="center" sx={{ py: 6 }}>
+                    <TableCell colSpan={8} align="center" sx={{ py: 6 }}>
                       No hay transacciones.
                     </TableCell>
                   </TableRow>
